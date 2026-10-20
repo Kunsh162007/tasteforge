@@ -57,7 +57,7 @@ Qloo is the only source of recommendations. Concretely:
 - `/v2/insights` for `place` with `filter.location.query` returns places the audience likes in the chosen city. We then run `urn:tag` analysis on the top five, filtered to `urn:tag:decor:qloo` and `urn:tag:ambience:qloo`, and the LLM maps those tags to colours, lighting and materials. The look of the brief comes from tags Qloo attached to real places.
 - `urn:tag:genre:place:restaurant` tags on those places become menu ideas.
 - `urn:demographics` gives age and gender skew.
-- `urn:heatmap` gives the neighbourhoods where the audience concentrates.
+- `urn:heatmap` gives the geohash cells where the audience concentrates; we name them by reverse-geocoding (OpenStreetMap Nominatim) and plot them on a map.
 - `/v2/trending` shows whether the top artists are rising.
 - `filter.results.entities` lets Qloo rank a shortlist we supply. We use it for Taste Proof, so Qloo, not us, decides which list fits the audience better.
 - `filter.exclude.entities` and `filter.exclude.tags` power the refine loop.
