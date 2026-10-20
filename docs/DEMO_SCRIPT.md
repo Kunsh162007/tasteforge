@@ -1,6 +1,6 @@
 # TasteForge: 3-minute walkthrough
 
-For a judge on the live site: [LIVE_URL]. Every step says what to do and what to notice.
+For a judge on the live site: https://tasteforge-fa98.onrender.com. Every step says what to do and what to notice.
 
 Before you start: if the page shows "busy, retrying" at any point, wait a few seconds; the server is pacing a free-tier LLM. If a live brief is slow, step 7 (showcase briefs) is the instant fallback.
 

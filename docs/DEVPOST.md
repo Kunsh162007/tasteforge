@@ -1,6 +1,6 @@
 # TasteForge: Devpost submission text
 
-Live demo: [LIVE_URL] | Repo (MIT): [REPO_URL] | Video: [VIDEO_URL]
+Live demo: https://tasteforge-fa98.onrender.com | Repo (MIT): https://github.com/Kunsh162007/tasteforge
 
 **Tagline:** A cultural briefing agent that builds a brief for your audience, with every recommendation traced to a Qloo signal and scored against a plain LLM by Qloo itself.
 

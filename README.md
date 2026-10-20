@@ -2,7 +2,7 @@
 
 **A cultural briefing agent that turns "who is my audience and what do they love?" into a brief where every recommendation is backed by a Qloo taste-graph signal you can inspect.**
 
-Try it: [LIVE_URL] | Repo: [REPO_URL] | Demo video: [VIDEO_URL]
+Try it: https://tasteforge-fa98.onrender.com | Repo: https://github.com/Kunsh162007/tasteforge
 
 Built for the Qloo Agentic Hackathon. Licence: MIT.
 

@@ -15,8 +15,14 @@ import { synthesizeBrief } from "./synthesis";
 import { dropSeedEchoes } from "./guard";
 import { walkGraph } from "./walk";
 
-/** Live Qloo answers in 1 to 10 s per call; a full brief makes about 15 calls, 4 at a time, plus 3 LLM calls. */
-export const PIPELINE_TIMEOUT_MS = 60_000;
+/**
+ * Live Qloo answers in 1 to 10 s per call with a tail past 30 s; a full brief makes about 15 calls,
+ * 4 at a time, plus 3 LLM calls. 90 s plus the 25 s proof stays under the routes' 120 s maxDuration.
+ */
+const DEFAULT_PIPELINE_TIMEOUT_MS = 90_000;
+const configuredTimeout = Number(process.env.PIPELINE_TIMEOUT_MS);
+export const PIPELINE_TIMEOUT_MS =
+  Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : DEFAULT_PIPELINE_TIMEOUT_MS;
 
 export type PipelineOptions = {
   readonly prompt: string;
