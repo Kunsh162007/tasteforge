@@ -13,6 +13,8 @@ export type CascadeOptions = {
   readonly onSwitch?: (from: string, to: string, error: LlmError) => void;
   /** Called once per upstream request actually sent (feeds the daily budget). */
   readonly onCall?: () => void;
+  /** Cooldowns shared with other cascades, so a model cooling in one chain is skipped in the others too. */
+  readonly cooldowns?: Map<string, number>;
 };
 
 const MIN_RATE_LIMIT_COOL_MS = 5_000;
@@ -55,7 +57,7 @@ export function cooldownUntil(error: LlmError, now: number): number | undefined 
 export function createCascade(entries: readonly CascadeEntry[], o: CascadeOptions = {}): LlmProvider {
   if (entries.length === 0) throw new Error("The LLM chain is empty.");
   const now = o.now ?? Date.now;
-  const coolUntil = new Map<string, number>();
+  const coolUntil = o.cooldowns ?? new Map<string, number>();
   let answered: string | undefined;
   const cooling = (e: CascadeEntry): boolean => (coolUntil.get(e.id) ?? 0) > now();
   const available = (): CascadeEntry[] => entries.filter((e) => !cooling(e));

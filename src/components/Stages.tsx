@@ -1,4 +1,4 @@
-import { STAGES, type RunState, type StageStatus } from "@/ui/runState";
+import { STAGES, stageNote, type RunState, type StageStatus } from "@/ui/runState";
 
 const STATUS_TEXT: Record<StageStatus, string> = {
   idle: ", waiting",
@@ -19,7 +19,11 @@ export function Stages({ stages }: { stages: RunState["stages"] }) {
             <span className="stage__dot" aria-hidden="true" />
             <span className="stage__label">{s.label}</span>
             <span className="sr-only">{STATUS_TEXT[st.status]}</span>
-            {st.detail ? <span className="stage__detail">{st.detail}</span> : null}
+            {st.detail ? (
+              <span className="stage__detail" data-note={stageNote(st.detail)}>
+                {st.detail}
+              </span>
+            ) : null}
           </li>
         );
       })}

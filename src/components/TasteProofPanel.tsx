@@ -93,31 +93,57 @@ function Column({
   );
 }
 
+type Tally = { good: number; bad: number };
+
+/** One dot per pick: filled when it held up, hatched when it did not. Decorative; the numbers beside it say the same. */
+function Dots({ good, bad }: Tally) {
+  return (
+    <span className="dots" aria-hidden="true">
+      {Array.from({ length: good }, (_, i) => (
+        <span key={`g${i}`} className="dot dot--good" />
+      ))}
+      {Array.from({ length: bad }, (_, i) => (
+        <span key={`b${i}`} className="dot dot--bad" />
+      ))}
+    </span>
+  );
+}
+
 function Check({
   title,
+  question,
   plain,
   forge,
+  plainTally,
+  forgeTally,
   note,
   tone,
 }: {
   title: string;
+  /** The same check in plain words, for someone who has never heard of an affinity score. */
+  question?: string;
   plain?: string;
   forge: string;
+  plainTally?: Tally;
+  forgeTally?: Tally;
   note: string;
   tone?: "lead" | "minor";
 }) {
   return (
     <li className={`check check--${tone ?? "lead"}`}>
       <h3 className="check__title">{title}</h3>
+      {question ? <p className="check__question">{question}</p> : null}
       <p className="check__pair">
         {plain ? (
           <span className="check__side check__side--plain">
             <span className="check__num">{plain}</span>
+            {plainTally ? <Dots {...plainTally} /> : null}
             <span className="check__who">plain LLM</span>
           </span>
         ) : null}
         <span className="check__side check__side--forge">
           <span className="check__num">{forge}</span>
+          {forgeTally ? <Dots {...forgeTally} /> : null}
           <span className="check__who">TasteForge</span>
         </span>
       </p>
@@ -132,14 +158,23 @@ function fitVerdict(plain: number | null, forge: number | null): string {
   return forge >= plain ? `${base} TasteForge is at least as close.` : `${base} The plain answer scores a little higher on the picks it did find.`;
 }
 
+/** One honest sentence a non-technical reader can take away before any numbers. */
+function headline(missing: number, total: number, city?: string): string {
+  if (missing > 0) {
+    return `A plain AI answer named ${missing} of its ${total} picks that Qloo has no record of. Every TasteForge pick is a real Qloo result${city ? `, and its places are checked against ${city}` : ""}.`;
+  }
+  return `Both lists were checked against Qloo and every name was found. The difference is what TasteForge adds: places located with an address${city ? ` in ${city}` : ""}, and picks chosen for fit.`;
+}
+
 export function TasteProofPanel({ proof, pending }: { proof?: TasteProof; pending?: boolean }) {
   if (!proof) {
     return pending ? (
-      <section className="proof" aria-busy="true" aria-labelledby="proof-h">
+      <section id="proof" className="proof proof--pending" aria-busy="true" aria-labelledby="proof-h">
         <h2 id="proof-h" className="proof__title">
           Taste proof
         </h2>
         <p className="muted">Scoring a plain language-model answer against the same audience. This takes a few seconds.</p>
+        <span className="proof__shimmer" aria-hidden="true" />
       </section>
     ) : null;
   }
@@ -151,28 +186,34 @@ export function TasteProofPanel({ proof, pending }: { proof?: TasteProof; pendin
   const plainPlacesFound = plainPlaces.filter((p) => p.affinity !== null).length;
   const where = proof.city ? `in ${proof.city}` : "with an address";
   return (
-    <section className="proof" aria-labelledby="proof-h">
+    <section id="proof" className="proof" aria-labelledby="proof-h">
       <header className="proof__head">
         <h2 id="proof-h" className="proof__title">
           Taste proof
         </h2>
-        <p className="proof__deck">
-          Same audience, same questions. First: can the picks be found at all? Then: are they real places in the right city? Last, and least: how close is
-          the fit?
+        <p className="proof__deck">{headline(proof.baselineNotFound, proof.baseline.length, proof.city)}</p>
+        <p className="proof__legend" aria-hidden="true">
+          <span className="dot dot--good" /> found or verified <span className="dot dot--bad" /> not found
         </p>
       </header>
       <ul className="checks" aria-label="What the proof checks">
         <Check
           title="Picks Qloo couldn't find"
+          question="Do these names exist in Qloo's data at all?"
           plain={ofTotal(proof.baselineNotFound, proof.baseline.length)}
           forge={ofTotal(forgeMissing, proof.tasteforge.length)}
+          plainTally={{ good: found, bad: proof.baselineNotFound }}
+          forgeTally={{ good: proof.tasteforge.length - forgeMissing, bad: forgeMissing }}
           note="A pick Qloo has no record of is likely invented or not local. Every TasteForge pick is a Qloo result."
         />
         {forgePlaces.length > 0 ? (
           <Check
             title={`Real places ${where}`}
+            question="Can each place be located, with an address, in the right city?"
             plain={plainPlaces.length > 0 ? ofTotal(plainPlacesFound, plainPlaces.length) : undefined}
             forge={ofTotal(forgeLocal, forgePlaces.length)}
+            plainTally={plainPlaces.length > 0 ? { good: plainPlacesFound, bad: plainPlaces.length - plainPlacesFound } : undefined}
+            forgeTally={{ good: forgeLocal, bad: forgePlaces.length - forgeLocal }}
             note="TasteForge places were located by Qloo with an address on file; places outside the city are removed. For the plain answer Qloo only says whether it knows the name."
           />
         ) : null}
@@ -184,6 +225,7 @@ export function TasteProofPanel({ proof, pending }: { proof?: TasteProof; pendin
           note={fitVerdict(proof.baselineAvg, proof.tasteforgeAvg)}
         />
       </ul>
+      <h3 className="proof__sub">The picks, one by one</h3>
       <div className="proof__cols">
         <Column
           heading="Plain LLM"

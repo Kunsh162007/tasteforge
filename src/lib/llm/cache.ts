@@ -11,7 +11,7 @@ export type JsonCacheOptions = {
 
 /** Stable hash of everything that shapes a JSON-mode answer. */
 export function jsonRequestKey(req: JsonRequest): string {
-  const payload = JSON.stringify([req.tier ?? "main", req.system, req.prompt, req.schema ?? null]);
+  const payload = JSON.stringify([req.tier ?? "main", req.route ?? null, req.system, req.prompt, req.schema ?? null]);
   return createHash("sha256").update(payload).digest("hex");
 }
 

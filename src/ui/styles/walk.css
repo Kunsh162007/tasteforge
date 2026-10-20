@@ -1,0 +1,295 @@
+/* The wait: a live proof sheet. Stages fill like ink, and every question to Qloo lands in a log as it is answered. */
+
+.walk {
+  display: grid;
+  gap: 1.75rem;
+  max-width: 56rem;
+}
+.walk__head {
+  display: grid;
+  gap: 0.75rem;
+}
+.walk__title {
+  font-family: var(--font-serif);
+  font-size: var(--step-4);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  font-variation-settings: "opsz" 144;
+}
+.walk__eta {
+  color: var(--ink-soft);
+}
+.walk__clock {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.55rem;
+  border: 1.5px solid var(--ink);
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--step--1);
+}
+
+.walk__sheet {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.1rem 1.25rem 1.25rem;
+  background: var(--paper-raised);
+  border: 2px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--accent);
+}
+.walk__sheet::before {
+  content: "";
+  display: block;
+  height: 0.45rem;
+  background:
+    linear-gradient(var(--accent), var(--accent)) left / calc(var(--p, 0) * 100%) 100% no-repeat,
+    var(--paper-deep);
+  transition: background-size 0.8s var(--ease);
+}
+.walk__now {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.85rem;
+  font-family: var(--font-serif);
+  font-size: var(--step-1);
+  line-height: 1.3;
+}
+.walk__step {
+  font-family: var(--font-sans);
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}
+.walk__count {
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  margin-bottom: 0.6rem;
+  font-variant-numeric: tabular-nums;
+}
+.walk__cancel {
+  justify-self: start;
+}
+
+/* stage strip */
+.stages {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+  gap: 0 0.25rem;
+}
+.stage {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 0.15rem 0.5rem;
+  padding: 0.55rem 0.5rem 0.55rem 0;
+  color: var(--ink-soft);
+}
+.stage__dot {
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-top: 0.4rem;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  transition: background 0.3s var(--ease);
+}
+.stage[data-status="active"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+.stage[data-status="active"] .stage__dot {
+  background: var(--accent);
+  border-color: var(--accent);
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.stage[data-status="done"] {
+  color: var(--ink);
+}
+.stage[data-status="done"] .stage__dot {
+  background: var(--ink);
+  border-color: var(--ink);
+}
+.stage[data-status="failed"] {
+  color: var(--miss);
+  font-weight: 600;
+}
+.stage[data-status="failed"] .stage__dot {
+  background: var(--miss);
+  border-color: var(--miss);
+}
+.stage[data-status="skipped"] .stage__dot {
+  border-style: dashed;
+}
+.stage__detail {
+  grid-column: 2;
+  font-size: var(--step--1);
+  font-weight: 400;
+  color: var(--ink-soft);
+}
+/* "partial" and "skipped, out of time" are the server choosing speed over completeness, not failures */
+.stage__detail[data-note] {
+  font-style: italic;
+}
+@keyframes pulse {
+  50% {
+    transform: scale(1.35);
+    opacity: 0.6;
+  }
+}
+
+/* the log of questions */
+.walk__log {
+  max-width: 44rem;
+}
+.trail {
+  display: grid;
+  gap: 0;
+  border-top: 1px solid var(--rule);
+}
+.trail__line {
+  display: grid;
+  grid-template-columns: 1.1rem minmax(0, 1fr) auto;
+  gap: 0.2rem 0.75rem;
+  align-items: start;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid var(--rule);
+}
+.trail__mark {
+  width: 0.8rem;
+  height: 0.8rem;
+  margin-top: 0.4rem;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+}
+.trail__line[data-state="ok"] .trail__mark {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+.trail__line[data-state="failed"] .trail__mark {
+  border-color: var(--miss);
+  border-style: dashed;
+}
+.trail__line[data-state="skipped"] .trail__mark {
+  background: transparent;
+  border-color: var(--ink-soft);
+  border-style: dotted;
+  opacity: 0.7;
+}
+.trail__line[data-state="skipped"] .trail__label {
+  color: var(--ink-soft);
+}
+.trail__line[data-state="skipped"] .trail__summary {
+  border-left-color: var(--rule);
+  font-style: italic;
+}
+.trail__text {
+  display: grid;
+  gap: 0.15rem;
+}
+.trail__label {
+  font-family: var(--font-serif);
+  line-height: 1.35;
+}
+.trail__line[data-state="pending"] .trail__label {
+  color: var(--ink-soft);
+  font-style: italic;
+}
+.trail__summary {
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  padding-left: 0.65rem;
+  border-left: 3px solid var(--accent-wash);
+}
+.trail__line[data-state="failed"] .trail__summary {
+  border-left-color: var(--miss);
+}
+.trail__time {
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+  padding-top: 0.15rem;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .trail__line {
+    animation: land 0.45s var(--ease) both;
+  }
+  .trail__line[data-state="pending"] .trail__mark {
+    animation: pulse 1.2s ease-in-out infinite;
+  }
+  .trail__summary {
+    animation: land 0.5s var(--ease) 0.1s both;
+  }
+  @keyframes land {
+    from {
+      opacity: 0;
+      transform: translateY(0.5rem);
+    }
+  }
+}
+
+/* needs input, errors */
+.choices {
+  display: grid;
+  gap: 1rem;
+  border: 2px solid var(--ink);
+  background: var(--paper-raised);
+  padding: 1.25rem;
+  box-shadow: 6px 6px 0 var(--accent);
+}
+.choices__q {
+  font-family: var(--font-serif);
+  font-size: var(--step-1);
+}
+.choices ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+.chip {
+  appearance: none;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1.5px solid var(--ink);
+  padding: 0.55rem 1rem;
+  min-height: 2.75rem;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 0.6rem;
+  align-items: baseline;
+  transition: transform 0.12s var(--ease), background 0.12s;
+}
+.chip:hover {
+  transform: translateY(-1px);
+}
+.chip[aria-pressed="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+.chip__kind {
+  font-size: var(--step--1);
+  opacity: 0.75;
+}
+.choices .btn-primary {
+  justify-self: start;
+}
+
+.calm {
+  display: grid;
+  gap: 0.75rem;
+  border: 2px dashed var(--ink);
+  padding: 1.25rem;
+  max-width: var(--measure);
+}
+.calm__title {
+  font-family: var(--font-serif);
+  font-size: var(--step-1);
+  font-weight: 600;
+}
+.calm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  align-items: center;
+}

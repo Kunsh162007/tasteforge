@@ -9,15 +9,21 @@ type Props = {
   items: readonly ShowcaseItem[];
   onOpen: (item: ShowcaseItem) => void;
   onRetry: () => void;
-  onClose: () => void;
 };
 
 const LABEL: Record<ShowcaseItem["status"], string> = {
-  ready: "Ready",
-  generating: "Forging now",
+  ready: "Ready now",
+  generating: "Being built",
   queued: "Queued",
   failed: "Could not be built",
 };
+
+const MODE_LABEL: Record<ShowcaseItem["mode"], string> = {
+  know_audience: "Known audience",
+  find_audience: "Audience found for you",
+};
+
+const SKELETONS = [0, 1, 2];
 
 /** Ticks once a second while a retry countdown is showing. */
 function useNow(active: boolean): number {
@@ -30,12 +36,13 @@ function useNow(active: boolean): number {
   return now;
 }
 
-const LEDE: Partial<Record<ShowcasePhase, string>> = {
+const LEDE: Record<ShowcasePhase, string> = {
+  closed: "Checking the studio shelf...",
   loading: "Checking the studio shelf...",
-  polling: "Pre-built briefs are being forged in the background. Open one as soon as it is ready.",
-  settled: "Each of these was built by the same agent you are about to use.",
+  polling: "Some briefs are still being built in the background. Open one as soon as it is ready.",
+  settled: "Each of these was built by the same agent you are about to use. Open one to see the evidence behind every line.",
   timeout: "Some briefs are taking longer than expected. Open what is ready, or check again.",
-  unavailable: "The showcase is not reachable right now.",
+  unavailable: "The showcase is not reachable right now. You can still build your own brief below.",
 };
 
 function FailedNote({ item }: { item: ShowcaseItem }) {
@@ -50,54 +57,98 @@ function FailedNote({ item }: { item: ShowcaseItem }) {
   );
 }
 
+function Bands({ item }: { item: ShowcaseItem }) {
+  const palette = item.brief?.aesthetic.palette ?? [];
+  if (palette.length === 0) return <span className="showcase__bands showcase__bands--empty" aria-hidden="true" />;
+  const shown = palette.slice(0, 6);
+  return (
+    <>
+      <span className="showcase__bands" aria-hidden="true">
+        {shown.map((s) => (
+          <span key={`${s.hex}-${s.label}`} style={{ background: s.hex }} title={s.label} />
+        ))}
+      </span>
+      <p className="showcase__colours">{shown.slice(0, 3).map((s) => s.label).join(", ")}</p>
+    </>
+  );
+}
+
 function Card({ item, onOpen }: { item: ShowcaseItem; onOpen: Props["onOpen"] }) {
+  const ready = item.status === "ready";
+  const grounding = item.brief ? Math.round(item.brief.groundingScore * 100) : null;
   return (
     <li className="showcase__card" data-status={item.status}>
-      <p className="showcase__meta">
-        <span className="showcase__dot" aria-hidden="true" />
-        {LABEL[item.status]}
-        {item.city ? <span> &middot; {item.city}</span> : null}
-      </p>
-      <h3 className="showcase__title">{item.title}</h3>
-      {item.status === "ready" ? (
-        <button type="button" className="btn-primary showcase__open" onClick={() => onOpen(item)}>
-          Open this brief
-        </button>
-      ) : item.status === "failed" ? (
-        <FailedNote item={item} />
-      ) : (
-        <span className="showcase__bar" aria-hidden="true" />
-      )}
+      <Bands item={item} />
+      <div className="showcase__body">
+        <p className="showcase__meta">
+          <span className="showcase__dot" aria-hidden="true" />
+          <span>
+            {LABEL[item.status]}
+            {item.city ? `, ${item.city}` : ""}
+          </span>
+        </p>
+        <h3 className="showcase__title">{item.title}</h3>
+        <p className="showcase__sub muted">
+          {MODE_LABEL[item.mode]}
+          {ready && grounding !== null ? `, ${grounding}% grounded` : ""}
+        </p>
+        {ready ? (
+          <button type="button" className="btn-primary showcase__open" onClick={() => onOpen(item)}>
+            Open this brief<span className="sr-only">: {item.title}</span>
+          </button>
+        ) : item.status === "failed" ? (
+          <FailedNote item={item} />
+        ) : (
+          <span className="showcase__bar" aria-hidden="true" />
+        )}
+      </div>
     </li>
   );
 }
 
-export function ShowcaseGallery({ phase, items, onOpen, onRetry, onClose }: Props) {
-  if (phase === "closed") return null;
-  const waiting = phase === "loading" || phase === "polling";
+function Skeleton() {
   return (
-    <section className="showcase" aria-labelledby="showcase-h" aria-busy={waiting}>
-      <div className="showcase__head">
-        <h2 id="showcase-h" className="showcase__h">
-          Showcase briefs
-        </h2>
-        <button type="button" className="link-quiet" onClick={onClose}>
-          Close
-        </button>
+    <li className="showcase__card showcase__card--skeleton" aria-hidden="true">
+      <span className="showcase__bands showcase__bands--empty" />
+      <div className="showcase__body">
+        <span className="skel skel--short" />
+        <span className="skel" />
+        <span className="skel skel--mid" />
       </div>
-      <p className="muted showcase__lede" role="status">
-        {LEDE[phase]}
-      </p>
+    </li>
+  );
+}
+
+/** The primary path: finished briefs a visitor can open instantly. Loads on mount; never blocks the compose form. */
+export function ShowcaseGallery({ phase, items, onOpen, onRetry }: Props) {
+  const waiting = phase === "closed" || phase === "loading" || phase === "polling";
+  const showRetry = phase === "timeout" || phase === "unavailable" || items.some((i) => i.status === "failed");
+  return (
+    <section id="showcase" className="showcase" aria-labelledby="showcase-h" aria-busy={waiting}>
+      <div className="showcase__head">
+        <h2 id="showcase-h" className="section-title">
+          Start with a finished brief
+        </h2>
+        <p className="muted showcase__lede" role="status">
+          {LEDE[phase]}
+        </p>
+      </div>
       {items.length > 0 ? (
         <ul className="showcase__grid">
           {items.map((item) => (
             <Card key={item.id} item={item} onOpen={onOpen} />
           ))}
         </ul>
+      ) : phase !== "unavailable" ? (
+        <ul className="showcase__grid">
+          {SKELETONS.map((i) => (
+            <Skeleton key={i} />
+          ))}
+        </ul>
       ) : null}
-      {phase === "timeout" || phase === "unavailable" || items.some((i) => i.status === "failed") ? (
+      {showRetry ? (
         <button type="button" className="link-quiet" onClick={onRetry}>
-          Retry failed briefs
+          {phase === "unavailable" ? "Try the showcase again" : "Retry failed briefs"}
         </button>
       ) : null}
     </section>

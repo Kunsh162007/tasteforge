@@ -45,3 +45,16 @@ test("submit -> brief -> evidence drawer -> taste proof -> map -> refine", async
   // The proof is re-scored for the refined brief.
   await expect(page.getByText("average affinity").first()).toBeVisible({ timeout: 30_000 });
 });
+
+test("home leads with finished briefs, and one click opens one", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("heading", { level: 1, name: /know who you are making it for/i })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Start with a finished brief" })).toBeVisible();
+  // The compose form stays available as the secondary path.
+  await expect(page.getByRole("form", { name: "Or brief your own project" })).toBeVisible();
+
+  await page.getByRole("button", { name: /Open this brief/ }).first().click({ timeout: 60_000 });
+  await expect(page.getByRole("article")).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "In this brief" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /taste proof/i })).toBeVisible();
+});

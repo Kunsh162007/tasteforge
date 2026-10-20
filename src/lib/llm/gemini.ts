@@ -14,10 +14,13 @@ export type GeminiOptions = {
   readonly timeoutMs?: number;
 };
 
-/** Thinking budget (tokens) per tier: none for cheap extraction, a small one for synthesis. */
-const THINKING_BUDGET = { light: 0, main: 1024 } as const;
+/** Thinking budget (tokens) per tier: none for extraction and for synthesis, whose answer is a translation of evidence, not a derivation. */
+const THINKING_BUDGET = { light: 0, main: 0 } as const;
 /** Gemini 3.x models take a thinking level instead of a budget (verified live 2026-10-20: a budget of 0 is HTTP 400). */
-const THINKING_LEVEL = { light: "minimal", main: "low" } as const;
+const THINKING_LEVEL = { light: "minimal", main: "minimal" } as const;
+
+/** Gemini 3.x is meant to run at its default temperature; the 2.5 models take the same tier temperatures as Groq. */
+const temperatureFor = (model: string, tier: "light" | "main"): JsonObject => (/^gemini-3/.test(model) ? {} : { temperature: tier === "light" ? 0 : 0.3 });
 
 const thinkingConfig = (model: string, tier: "light" | "main"): JsonObject =>
   /^gemini-3/.test(model) ? { thinkingLevel: THINKING_LEVEL[tier] } : { thinkingBudget: THINKING_BUDGET[tier] };
@@ -60,6 +63,7 @@ export function createGeminiProvider(o: GeminiOptions): LlmProvider {
           responseMimeType: "application/json",
           ...(req.schema ? { responseJsonSchema: req.schema } : {}),
           thinkingConfig: thinkingConfig(m, tier),
+          ...temperatureFor(m, tier),
         },
       });
       try {

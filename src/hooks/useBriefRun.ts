@@ -19,7 +19,7 @@ function reducer(state: RunState, action: Action): RunState {
     case "fail":
       return reduceEvent(state, { type: "error", message: action.message, retryable: action.retryable });
     case "load":
-      return action.state;
+      return { ...action.state, ended: true };
     case "reset":
       return INITIAL_RUN;
   }

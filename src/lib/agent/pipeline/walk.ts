@@ -4,15 +4,23 @@ import { NO_EXCLUSIONS, type Exclusions } from "../refine/plan";
 import { isUnnamedArea, withHeatmapEntities, withTags } from "../summaries";
 import { ENTITY_TYPES, type QlooEntity } from "@/lib/qloo";
 import type { EvidenceEntity } from "../ledger";
-import { isUsable, noteFilled, replaceEvidence, setGuard, viaTool, type PipelineCtx } from "./context";
+import { isUsable, noteFilled, raceTimeout, replaceEvidence, setGuard, viaTool, type PipelineCtx } from "./context";
 import { scrubEntities } from "./guard";
 import { baselineShares, menuTags, rankStyleTags } from "./placeFacts";
 import type { Signals } from "./resolve";
 import { signalArgsFor, venueTagIds } from "./routing";
+import { executeTool } from "../tools";
+import { EMPTY_LEDGER } from "../ledger";
 
 /** Stage 3: the plan section 4 graph walk, one parallel branch per brief section. */
 
+/** Section lists in the brief hold at most 6 items; a few spare cover seed echoes and off-city places that get scrubbed. */
 const INSIGHT_TAKE = 10;
+const LIST_TAKE = 8;
+/** How long optional work (trending, extra TV, hotspot names) may keep running once the core walk has finished. */
+export const OPTIONAL_BUDGET_MS = 4_000;
+/** The city baseline only sharpens style tags; it gets this long after the style tags arrived, then the pooled order is kept. */
+const BASELINE_WAIT_MS = 3_000;
 const TOP_PLACES_FOR_TAGS = 5;
 const TOP_ARTISTS_FOR_TREND = 3;
 const DECOR_AMBIENCE_TYPES = ["urn:tag:decor:qloo", "urn:tag:ambience:qloo"];
@@ -41,7 +49,7 @@ async function walkAudience(ctx: PipelineCtx, s: Signals, x: Exclusions): Promis
   const noTagExclusions = excludeArgs({ ...x, tagIds: [] });
   await Promise.all([
     viaTool(ctx, "audience", "qloo_insights", { type: "movie", ...signalArgsFor("movie", s), ...noTagExclusions, take: 8 }),
-    viaTool(ctx, "audience", "qloo_insights", { type: "tv_show", ...signalArgsFor("tv_show", s), ...noTagExclusions, take: 6 }),
+    viaTool(ctx, "audience", "qloo_insights", { type: "tv_show", ...signalArgsFor("tv_show", s), ...noTagExclusions, take: 6 }, { optional: true }),
     viaTool(ctx, "audience", "qloo_demographics", signalArgsFor("demographics", s)),
   ]);
 }
@@ -51,10 +59,11 @@ async function walkSound(ctx: PipelineCtx, s: Signals, x: Exclusions): Promise<v
     type: "artist",
     ...signalArgsFor("artist", s),
     ...excludeArgs({ ...x, tagIds: [] }),
-    take: INSIGHT_TAKE,
+    take: LIST_TAKE,
   });
   const ids = topIds(artists, TOP_ARTISTS_FOR_TREND);
-  if (ids.length > 0) await viaTool(ctx, "sound", "qloo_trending", { type: "artist", entity_ids: ids });
+  // Trending only colours a sentence; it never holds the brief back.
+  if (ids.length > 0) void viaTool(ctx, "sound", "qloo_trending", { type: "artist", entity_ids: ids }, { optional: true });
 }
 
 const BASELINE_PLACES = 20;
@@ -102,26 +111,63 @@ function sharpenMenu(ctx: PipelineCtx, ev: Evidence | undefined, ids: readonly s
   if (!had) noteFilled(ctx, "pairings", own.length);
 }
 
+type PlaceQuery = Record<string, unknown>;
+
+/**
+ * A broader version of the place query to run alongside it: the venue filter dropped, or else the last (most
+ * specific) concept tag dropped. undefined when there is nothing to drop.
+ */
+function widenedPlaceQuery(query: PlaceQuery, venue: readonly string[]): PlaceQuery | undefined {
+  if (venue.length > 0) return query;
+  const tags = (query.tag_ids as readonly string[] | undefined) ?? [];
+  if (tags.length < 2) return undefined;
+  return { ...query, tag_ids: tags.slice(0, -1) };
+}
+
+/** Starts a query for its side effect (the client shares in-flight and cached answers); nothing is recorded. */
+function prefetch(ctx: PipelineCtx, query: PlaceQuery): void {
+  void executeTool({ name: "qloo_insights", args: query }, { qloo: ctx.qloo, ledger: EMPTY_LEDGER, now: ctx.now }).catch(() => undefined);
+}
+
+const isThin = (e: Evidence | undefined): boolean => (e?.entities?.length ?? 0) < MIN_FILTERED_PLACES;
+
 async function walkPlaces(ctx: PipelineCtx, s: Signals, city: string, x: Exclusions): Promise<void> {
-  const query = { type: "place", ...signalArgsFor("place", s), ...excludeArgs(x), location: city, take: INSIGHT_TAKE };
+  const query: PlaceQuery = { type: "place", ...signalArgsFor("place", s), ...excludeArgs(x), location: city, take: INSIGHT_TAKE };
   const venue = venueTagIds(s.tagIds);
+  const primary = venue.length > 0 ? { ...query, filter_tag_ids: venue } : query;
+  const widened = widenedPlaceQuery(query, venue);
+  // The widened query runs beside the first one, so a thin answer costs no extra round trip.
+  const first = viaTool(ctx, "aesthetic", "qloo_insights", primary);
+  if (widened) prefetch(ctx, widened);
   const baseline = cityBaseline(ctx, city, venue);
-  let places = await viaTool(ctx, "aesthetic", "qloo_insights", venue.length > 0 ? { ...query, filter_tag_ids: venue } : query);
-  if (venue.length > 0 && (places?.entities?.length ?? 0) < MIN_FILTERED_PLACES) {
-    places = await viaTool(ctx, "aesthetic", "qloo_insights", query);
-  }
+  let places = await first;
+  if (widened && isThin(places)) places = await viaTool(ctx, "aesthetic", "qloo_insights", widened);
   const ids = topIds(places, TOP_PLACES_FOR_TAGS);
   if (ids.length === 0) return;
   const [style, menu] = await Promise.all([
     viaTool(ctx, "aesthetic", "qloo_entity_tags", { entity_ids: ids, tag_types: DECOR_AMBIENCE_TYPES, take: 15 }),
     viaTool(ctx, "pairings", "qloo_entity_tags", { entity_ids: ids, tag_types: CUISINE_TYPES, take: 10 }),
   ]);
-  sharpenStyle(ctx, style, ids, await baseline);
+  const shares = await raceValue(baseline, BASELINE_WAIT_MS);
+  if (shares) sharpenStyle(ctx, style, ids, shares);
   sharpenMenu(ctx, menu, ids);
 }
 
+/** The value of `work`, or undefined if it takes longer than `ms`. */
+async function raceValue<T>(work: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function walkPairings(ctx: PipelineCtx, s: Signals, x: Exclusions): Promise<void> {
-  await viaTool(ctx, "pairings", "qloo_insights", { type: "brand", ...signalArgsFor("brand", s), ...excludeArgs({ ...x, tagIds: [] }), take: INSIGHT_TAKE });
+  await viaTool(ctx, "pairings", "qloo_insights", { type: "brand", ...signalArgsFor("brand", s), ...excludeArgs({ ...x, tagIds: [] }), take: LIST_TAKE });
 }
 
 const HOTSPOTS_TO_NAME = 4;
@@ -164,17 +210,31 @@ function withoutCells(ctx: PipelineCtx, heat: Evidence, cellIds: readonly string
 
 async function walkWhere(ctx: PipelineCtx, s: Signals, city: string, x: Exclusions): Promise<void> {
   const heat = await viaTool(ctx, "where", "qloo_heatmap", { location: city, ...signalArgsFor("heatmap", s) });
-  if (heat) await nameHotspots(ctx, withoutCells(ctx, heat, x.cellIds), city);
+  // Neighbourhood names are a nicety: they arrive in time or the placeholders ("Area near ...") stay.
+  if (heat) ctx.optional.push(nameHotspots(ctx, withoutCells(ctx, heat, x.cellIds), city).catch(() => undefined));
 }
 
+export type WalkOptions = {
+  /** Leave optional work running; the caller ends it with `closeRun`. */
+  readonly deferOptional?: boolean;
+  /** Epoch ms after which the walk stops waiting for the remaining core calls and reports a partial result. */
+  readonly deadlineAt?: number;
+};
+
+export type WalkOutcome = {
+  /** true: the deadline passed with core calls still running; the brief is built from what arrived. */
+  readonly partial: boolean;
+};
+
 /** Runs every section branch in parallel. Place-based sections only run when a city is known. */
-export async function walkGraph(ctx: PipelineCtx, signals: Signals, city: string | undefined): Promise<void> {
-  await walkSections(ctx, ["audience", "sound", "pairings", "aesthetic", "where"], signals, city, NO_EXCLUSIONS);
+export async function walkGraph(ctx: PipelineCtx, signals: Signals, city: string | undefined, opts: WalkOptions = {}): Promise<WalkOutcome> {
+  return walkSections(ctx, ["audience", "sound", "pairings", "aesthetic", "where"], signals, city, NO_EXCLUSIONS, opts);
 }
 
 /**
  * Walks only the given sections in parallel (the full brief, or just the sections a refine run touches).
  * Pairings also need the places walk for cuisine tags, so it runs for either section.
+ * The longest chain (places, then their tags) starts first so it is not queued behind the short calls.
  */
 export async function walkSections(
   ctx: PipelineCtx,
@@ -182,14 +242,20 @@ export async function walkSections(
   signals: Signals,
   city: string | undefined,
   x: Exclusions,
-): Promise<void> {
+  opts: WalkOptions = {},
+): Promise<WalkOutcome> {
   setGuard(ctx, signals, city);
   const has = (k: SectionKey): boolean => sections.includes(k);
   const branches: Promise<void>[] = [];
+  if (city && (has("aesthetic") || has("pairings"))) branches.push(walkPlaces(ctx, signals, city, x));
+  if (city && has("where")) branches.push(walkWhere(ctx, signals, city, x));
   if (has("audience")) branches.push(walkAudience(ctx, signals, x));
   if (has("sound")) branches.push(walkSound(ctx, signals, x));
   if (has("pairings")) branches.push(walkPairings(ctx, signals, x));
-  if (city && (has("aesthetic") || has("pairings"))) branches.push(walkPlaces(ctx, signals, city, x));
-  if (city && has("where")) branches.push(walkWhere(ctx, signals, city, x));
-  await Promise.all(branches);
+  const core = Promise.all(branches);
+  if (opts.deadlineAt === undefined) await core;
+  const outcome = opts.deadlineAt === undefined ? "done" : await raceTimeout(core, opts.deadlineAt - Date.now());
+  // Refine and compare have no later stage to overlap with, so they give optional work a short grace period here.
+  if (!opts.deferOptional && outcome === "done") await raceTimeout(Promise.allSettled(ctx.optional), OPTIONAL_BUDGET_MS);
+  return { partial: outcome === "timeout" };
 }

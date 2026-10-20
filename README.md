@@ -19,7 +19,7 @@ You describe a project and, optionally, a city. TasteForge returns a brief with 
 | Section | Contents |
 |---|---|
 | The audience | Affinities (films, shows, other taste signals) and age/gender skew |
-| The look | Palette (hex swatches), lighting, materials and reference places, derived from decor and ambience tags of places the audience likes |
+| The look | A 4 to 5 colour palette with real colour names ("Clay terracotta"), neutrals plus a clear accent, each captioned with the Qloo decor or ambience tags it came from; lighting, materials and reference places, all derived from tags of places the audience likes |
 | The sound | Artists the audience over-indexes on, with trending direction |
 | Pairings | Brands, plus menu or merch ideas inferred from cuisine tags |
 | Where they are | Neighbourhood hotspots for the audience in your city, on a map (needs a city) |
@@ -80,17 +80,27 @@ Answers "is a TasteForge brief safer to use than a plain LLM answer?" with Qloo'
 
 Proof failure never fails the brief. Honest framing: the score measures fit with the audience's Qloo taste signals, not quality in general.
 
+**Fabrication benchmark** (20 prompts, 5 cities, live Qloo, 2026-10-20; method and caveats in docs/BENCHMARK.md, reproduce with `npm run benchmark`): a plain LLM's place picks were missing from Qloo or in another city **56% of the time** (38 not found and 26 in another city, of 115; four runs gave 43% to 59%), and 29% of all its picks could not be found at all. TasteForge: 0% of 120, because it can only return what Qloo returned. Fit with the audience is about the same (places 0.78 baseline, 0.79 TasteForge), so the claim is verifiability, not a fit gap. Honest limits: Qloo's catalogue is not the world, so "not found" means "cannot be verified", and picks differ a lot between repeat runs for both (overlap 13% plain, 17% TasteForge).
+
 What it claims, and what it does not: every pick is verified and traceable to a Qloo result, its fit is never lower than the plain answer's in our runs, and it catches picks that do not exist in Qloo or are not local. It does not claim a large fit advantage.
 
 Result: live Qloo data, real LLM, 2026-10-20 (Indore cafe, London ceramic artist, New York A24/Radiohead/Vietnamese date night). Plain-LLM average affinity 0.86, 0.86 and 0.87 against TasteForge 0.93 on all three. Qloo could not find 2, 2 and 0 of the plain answers' 12 to 14 picks (for example "Muskaan" and "O2 Cafe Hill" for Indore), while every TasteForge pick is a Qloo result and every TasteForge place was located by Qloo in its city. Numbers from a local mock run come from synthetic fixtures and mean nothing.
+
+## Why this matters
+
+1. LLMs fabricate venues, most in neighbourhoods with weak digital footprints, and fabrication disappears when the model is given verified venue lists (Chen, Weng & Moro, 2026, https://arxiv.org/abs/2607.06260). That is TasteForge's design.
+2. More than 1 million US restaurant locations, over 70% single-unit (National Restaurant Association, 2025, https://go.restaurant.org/rs/078-ZLA-461/images/SOI-2025-PocketGuide.pdf); 26% of independents fail in year one (Parsa et al., 2005; a later BLS-based study puts it at 17%, https://news.osu.edu/restaurant-failure-rate-much-lower-than-commonly-assumed-study-finds/).
+3. A meta-analysis of 66 studies (N=15,621): music, scent and colour shape customer behaviour, more strongly in service venues such as cafes (Roschk et al., 2017, https://eprints.gla.ac.uk/214127/).
+4. What small businesses pay today: one Mintel market report is $4,995 (https://reports.mintel.com/display/1157789/), hospitality brand agencies list $10k+ minimums (Clutch), design runs $5 to 15 per sq ft (https://www.homeadvisor.com/cost/home-design-and-decor/hire-an-interior-decorator-or-designer/). A TasteForge brief costs cents at paid rates (estimate).
+5. Free tool-calling agents succeed on all 8 of 8 repeated tries less than 25% of the time (tau-bench, https://arxiv.org/abs/2406.12045); the hybrid design uses about 70% fewer LLM calls.
 
 ## Architecture
 
 A hybrid pipeline: code does the predictable work, the LLM does the judgement calls. 3 to 5 LLM calls per brief instead of an open-ended tool loop.
 
 ```
-seeds (LLM, light) -> resolve (Qloo) -> parallel graph walk (Qloo)
-  -> critic (LLM, light, max 2 rounds) -> synthesis (LLM) -> validator -> Taste Proof
+seeds (LLM) -> resolve (Qloo) -> parallel graph walk (Qloo, 28 s soft deadline)
+  -> critic (LLM, one round, ~10 s) -> synthesis (LLM) -> validator -> Taste Proof
 ```
 
 Streaming over Server-Sent Events, so the UI shows the graph walk as it happens. Full diagram, event contract, module map and design decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -135,11 +145,13 @@ Details, the event contract and the module map are in [docs/ARCHITECTURE.md](doc
 | `QLOO_MODE` | `mock` | `mock` (synthetic fixtures, no key) or `live` |
 | `QLOO_API_KEY` | none | Qloo hackathon key; required when `QLOO_MODE=live` |
 | `QLOO_BASE_URL` | `https://hackathon.api.qloo.com` | Qloo API base URL |
-| `LLM_CHAIN` | `gemini:gemini-3.5-flash-lite,gemini:gemini-3.5-flash,gemini:gemini-2.5-flash,groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b` | Ordered `provider:model` list. A model that answers 429, quota exhausted or 503 cools down (daily quotas until 00:00 UTC, others for the server's retry-after) and the next one answers, so several small free tiers add up (Gemini free keys allow about 20 requests a day per model). Models whose provider has no key are skipped. The model that wrote a brief is shown in its header. |
+| `LLM_CHAIN_FAST` | `groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-20b,gemini:gemini-2.5-flash,gemini:gemini-3.5-flash-lite` | Ordered `provider:model` list for the short calls: seeds, critic and the Taste Proof baseline. A model that answers 429, quota exhausted or 503 cools down (daily quotas until 00:00 UTC, others for the server's retry-after) and the next one answers, so several small free tiers add up. Models whose provider has no key are skipped. Measured: Groq answers these in 0.4 to 1 s, Gemini's free tier in 9 to 21 s. |
+| `LLM_CHAIN_MAIN` | `groq:openai/gpt-oss-120b,gemini:gemini-2.5-flash,groq:qwen/qwen3.8-27b,gemini:gemini-3.5-flash,gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-20b` | The same for the brief synthesis (about 5 s on Groq, 13 to 16 s on Gemini). The model that wrote a brief is shown in its header. |
+| `LLM_CHAIN` | unset | Older single setting: used for any call type whose own chain above is unset. |
 | `GEMINI_API_KEY` | none | Google AI Studio key for `gemini:` entries |
-| `GROQ_API_KEY` | none | Groq key for `groq:` entries (strongly recommended as the fallback) |
+| `GROQ_API_KEY` | none | Groq key for `groq:` entries (strongly recommended: the first model in both default chains) |
 | `LLM_PROVIDER` | unset | `mock` (offline scripted JSON, used by E2E) always wins. `groq` puts the Groq models first. Otherwise legacy and optional. |
-| `GEMINI_MODEL`, `GROQ_MODEL` | unset | Legacy: when `LLM_CHAIN` is unset the model is added to the front of its provider's group in the default chain |
+| `GEMINI_MODEL`, `GROQ_MODEL` | unset | Legacy: when no chain variable is set the model is added to the front of its own provider's group in the default chains |
 | `LEDGER_SECRET` | random per process | Key for the HMAC that signs the evidence handed to the browser (refine, compare, shared links). Use a long random value (16+ characters, e.g. `openssl rand -base64 32`). Without it a random secret is generated at startup and a warning is logged; shared links then stop verifying after each restart. `render.yaml` generates one for you. |
 | `MAX_CONCURRENT_BRIEFS` | `4` | Briefs, refinements and comparisons that may run at once, server-wide. Beyond it visitors get a friendly, retryable "demo is busy" message. |
 | `DAILY_LLM_BUDGET` | `600` | LLM calls per UTC day, server-wide. Once spent, new runs get a "try again tomorrow" message instead of hammering the free tier. |
@@ -156,6 +168,8 @@ Keys are read from the environment only. `.env*` is git-ignored except `.env.exa
 | `npm run lint` | ESLint |
 | `npm run test:e2e` | Playwright end-to-end flow (submit, brief, evidence drawer, Taste Proof, map, refine) |
 | `npm run smoke` | Real LLM from your env plus mock Qloo; prints stages, LLM call count, duration, grounding and proof averages |
+| `npm run benchmark` | Fabrication benchmark: 20 prompts across 5 cities, plain LLM against TasteForge, checked against live Qloo; writes `docs/BENCHMARK.md`. Needs `QLOO_MODE=live` and an LLM key. |
+| `npm run bench:llm` | Replays captured LLM requests against chosen models (latency, JSON validity, grounding); see `docs/ARCHITECTURE.md`, "Speed pass". |
 | `npm run qloo:check -- --live` | Probes each Qloo endpoint and parameter and prints PASS/WARN/FAIL. Needs `-- --live` and `QLOO_API_KEY` to test real data; without `--live` it runs against the mock fixtures and proves nothing about the live API. |
 
 ## Deploy
@@ -182,9 +196,9 @@ The showcase cache and rate limiter are per server instance (in memory, with a g
 - **Affinity measures fit with taste signals.** Taste Proof shows that picks are real, local and at least as close to the audience's Qloo signals as an ungrounded LLM list (the fit gap is modest on live data). It does not measure sales, quality or novelty.
 - **Result hygiene.** In code, before the writer sees Qloo results: the user's own seeds are removed (by id and normalized name), places more than 50 km from the city's result cluster are dropped (with a same-city widening query if that leaves too few), film and TV picks below the batch median affinity are omitted, and style tags are ranked by how specific they are to the top places versus the city's ordinary places.
 - **Coverage varies by city.** Places, decor/ambience tags and heatmaps depend on Qloo's coverage. Thin sections get a lower confidence label and the critic tries fallbacks (drop the city, tags only).
-- **Free-tier LLM limits.** Gemini and Groq free tiers are rate-limited. The app walks the `LLM_CHAIN` cascade (see above), cooling down any model that hits its quota or an outage, and paces showcase generation. Under heavy load you may see a "busy, retrying" state.
+- **Free-tier LLM limits.** Gemini and Groq free tiers are rate-limited (Groq: 8000 tokens a minute per model, so two briefs within the same minute spill onto the next model in the chain). The app walks the `LLM_CHAIN_FAST` / `LLM_CHAIN_MAIN` cascades (see above), cooling down any model that hits its quota or an outage, and paces showcase generation. Under heavy load you may see a "busy, retrying" state.
 - **Demo capacity.** A server-wide cap on concurrent runs and a daily LLM budget protect the free tiers; when either is hit the app says it is busy and to retry. Limits and caches are per server instance.
-- **Pipeline deadline.** A brief has a 60 second budget (live Qloo calls take 1 to 10 s each); very slow upstreams end in a friendly retryable error.
+- **Pipeline deadline.** A brief has a 90 second budget, and the Qloo walk stops waiting after 28 s: calls still running are shown as skipped ("Left out") and the brief is written from what arrived, with lower section confidence (live Qloo calls take 1 to 10 s each with a long tail). Only a wholly unusable run ends in a friendly retryable error.
 - Parameter spellings that could not be confirmed offline are marked `VERIFY with live key` in `src/lib/qloo/` and are checked by `qloo:check`.
 
 ## Licence

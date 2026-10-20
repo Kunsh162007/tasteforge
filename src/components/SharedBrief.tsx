@@ -44,7 +44,7 @@ function Shared({ payload }: { payload: SharePayload }) {
         </p>
         {payload.prompt ? <p className="muted">Brief asked for: &ldquo;{payload.prompt}&rdquo;</p> : null}
       </aside>
-      <BriefView brief={payload.brief} dropped={[]} />
+      <BriefView brief={payload.brief} dropped={[]} hasProof={Boolean(payload.proof)} />
       <TasteProofPanel proof={payload.proof} pending={false} />
       <p className="shared-cta">
         <Link className="btn-primary" href="/">

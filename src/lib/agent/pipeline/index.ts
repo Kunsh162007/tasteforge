@@ -7,13 +7,13 @@ import { describeFailure, withDeadline, type Failure } from "../failure";
 import type { Ledger } from "../ledger";
 import { validateBrief } from "../validator";
 import { sectionConfidence } from "./confidence";
-import { createCtx, snapshotStats, type PipelineCtx, type SectionStat } from "./context";
+import { closeRun, createCtx, raceTimeout, snapshotStats, type PipelineCtx, type SectionStat } from "./context";
 import { runCritic } from "./critic";
 import { resolveFromPrompt, resolveSeeds, type Resolution, type Signals } from "./resolve";
 import { extractSeeds } from "./seeds";
 import { synthesizeBrief } from "./synthesis";
 import { dropSeedEchoes } from "./guard";
-import { walkGraph } from "./walk";
+import { OPTIONAL_BUDGET_MS, walkGraph } from "./walk";
 
 /**
  * Live Qloo answers in 1 to 10 s per call with a tail past 30 s; a full brief makes about 15 calls,
@@ -23,6 +23,18 @@ const DEFAULT_PIPELINE_TIMEOUT_MS = 90_000;
 const configuredTimeout = Number(process.env.PIPELINE_TIMEOUT_MS);
 export const PIPELINE_TIMEOUT_MS =
   Number.isFinite(configuredTimeout) && configuredTimeout > 0 ? configuredTimeout : DEFAULT_PIPELINE_TIMEOUT_MS;
+
+/**
+ * Graceful degradation: the data gathering stops waiting this long after the walk started (and always leaves the
+ * synthesis its reserve before the run's own deadline) and the brief is written from what has arrived, with lower
+ * section confidence. Both scale down with a short run deadline.
+ */
+export const WALK_BUDGET_MS = 28_000;
+export const SYNTHESIS_RESERVE_MS = 30_000;
+const WALK_BUDGET_SHARE = 0.45;
+const RESERVE_SHARE = 0.33;
+/** The critic's follow-up round is one fast query set: it may not run longer than this. */
+export const CRITIC_BUDGET_MS = 10_000;
 
 export type PipelineOptions = {
   readonly prompt: string;
@@ -41,6 +53,8 @@ export type PipelineOptions = {
   readonly geocode?: ReverseGeocoder;
   /** Called once the taste signals are resolved, before the graph walk: the point where side work (the Taste Proof baseline) may start. */
   readonly onResolved?: () => void;
+  /** Called once the core graph walk has finished or given up (always, even when the run fails): Qloo is then free for side work. */
+  readonly onWalked?: () => void;
   /** false: ambiguous names are resolved to the top match instead of asking (showcases, smoke). */
   readonly allowNeedsInput?: boolean;
 };
@@ -100,7 +114,14 @@ const walkFoundData = (ctx: PipelineCtx): boolean => [...ctx.stats.values()].som
  */
 export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   const emit = (e: AgentEvent): void => o.onEvent?.(e);
-  const deadlineAt = Date.now() + (o.timeoutMs ?? PIPELINE_TIMEOUT_MS);
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + (o.timeoutMs ?? PIPELINE_TIMEOUT_MS);
+  let walkedSignalled = false;
+  const walkedOnce = (): void => {
+    if (walkedSignalled) return;
+    walkedSignalled = true;
+    o.onWalked?.();
+  };
   const llm = withinDeadline(o.llm, deadlineAt);
   const ctx = createCtx({ qloo: o.qloo, emit, now: o.now, geocode: o.geocode });
   const stage = (name: StageName, status: "start" | "done", detail?: string): void =>
@@ -124,13 +145,28 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     o.onResolved?.();
 
     stage("walk", "start");
-    await walkGraph(ctx, signals, city);
-    if (!walkFoundData(ctx)) return fail(noDataFailure(ctx));
-    stage("walk", "done", `${plural(ctx.box.ledger.records.length, "evidence record")}`);
+    const budgetMs = o.timeoutMs ?? PIPELINE_TIMEOUT_MS;
+    const walkDeadlineAt = Math.min(
+      Date.now() + Math.min(WALK_BUDGET_MS, budgetMs * WALK_BUDGET_SHARE),
+      deadlineAt - Math.min(SYNTHESIS_RESERVE_MS, budgetMs * RESERVE_SHARE),
+    );
+    const walked = await walkGraph(ctx, signals, city, { deferOptional: true, deadlineAt: walkDeadlineAt });
+    walkedOnce();
+    if (!walkFoundData(ctx)) {
+      await closeRun(ctx, 0);
+      return fail(noDataFailure(ctx));
+    }
+    const optionalUntil = Date.now() + OPTIONAL_BUDGET_MS;
+    const pendingNow = ctx.pending.size;
+    stage("walk", "done", `${plural(ctx.box.ledger.records.length, "evidence record")}${walked.partial ? `, partial: ${plural(pendingNow, "call")} cut off` : ""}`);
 
     stage("critic", "start");
-    const critic = await runCritic(ctx, { llm, signals, city, expected: expectedSections(city) });
+    const critic = walked.partial
+      ? { detail: "skipped, out of time" }
+      : await boundedCritic(ctx, { llm, signals, city, expected: expectedSections(city) }, deadlineAt);
     stage("critic", "done", critic.detail);
+    // Optional work (trending, extra TV, hotspot names) had the critic's time to land; it never delays synthesis further.
+    await closeRun(ctx, optionalUntil - Date.now());
 
     stage("synthesis", "start");
     const draft = await synthesizeBrief({ llm, prompt: o.prompt, mode: o.mode, city, signals, ledger: ctx.box.ledger });
@@ -144,7 +180,18 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     return { ok: true, brief: withConfidence, dropped, ledger: ctx.box.ledger, signals, stats, city };
   } catch (e) {
     return fail(describeFailure(e));
+  } finally {
+    walkedOnce();
   }
+}
+
+/** The critic with a hard sub-deadline: whatever it has not finished is left out and the run moves on to synthesis. */
+async function boundedCritic(ctx: PipelineCtx, input: Parameters<typeof runCritic>[1], deadlineAt: number): Promise<{ readonly detail: string }> {
+  const work = runCritic(ctx, input);
+  const budget = Math.min(CRITIC_BUDGET_MS, (deadlineAt - Date.now()) * 0.25);
+  let outcome: Awaited<ReturnType<typeof runCritic>> | undefined;
+  const settled = await raceTimeout(work.then((r) => (outcome = r)), budget);
+  return settled === "done" && outcome ? outcome : { detail: "follow-up cut short, kept the first pass" };
 }
 
 type StageFn = (name: StageName, status: "start" | "done", detail?: string) => void;

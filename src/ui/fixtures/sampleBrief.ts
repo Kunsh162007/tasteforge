@@ -92,11 +92,11 @@ export const sampleBrief: Brief = {
   },
   aesthetic: {
     palette: [
-      { label: "Lantern amber", hex: "#C98B3E", evidence: ["ev_3"], detail: "From warm wood and low light tags" },
-      { label: "Brick ember", hex: "#8E4A3A", evidence: ["ev_3"] },
-      { label: "Fern shadow", hex: "#3F5A45", evidence: ["ev_3"] },
-      { label: "Film-stock cream", hex: "#EADFC8", evidence: ["ev_3"] },
-      { label: "Midnight ink", hex: "#1E2230", evidence: ["ev_3"] },
+      { label: "Lantern amber", hex: "#C98B3E", evidence: ["ev_3"], tags: ["Warm", "Cozy"], role: "accent" },
+      { label: "Brick ember", hex: "#8E4A3A", evidence: ["ev_3"], tags: ["Exposed brick"], role: "base" },
+      { label: "Fern shadow", hex: "#3F5A45", evidence: ["ev_3"], tags: ["Plants"], role: "base" },
+      { label: "Film-stock cream", hex: "#EADFC8", evidence: ["ev_3"], tags: ["Intimate"], role: "base" },
+      { label: "Midnight ink", hex: "#1E2230", evidence: ["ev_3"], tags: ["Dim lighting"], role: "base" },
     ],
     lighting: [
       { label: "Low, warm pendants", detail: "No overhead fluorescents", evidence: ["ev_3"] },

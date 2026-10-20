@@ -29,7 +29,7 @@ function Entry({ item, slot }: { item: Item; slot: SlotDiff["key"] }) {
   return (
     <li className="cmp-item">
       {hex ? (
-        <span className="cmp-item__chip" style={{ background: hex, color: inkFor(hex) }} aria-hidden="true">
+        <span className="cmp-item__chip" style={{ background: hex, color: inkFor(hex) }} aria-hidden="true" title={(item as Swatch).tags?.join(", ")}>
           {hex.toUpperCase()}
         </span>
       ) : null}

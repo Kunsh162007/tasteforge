@@ -43,7 +43,7 @@ const BaselineSchema = z.object({
   brands: names("About 4 real brands."),
 });
 
-const BASELINE_SYSTEM = `You are a helpful assistant with no access to any data source. Recommend real, specific names that fit the audience described. Reply with JSON only: artists (about 6), places (about 6 real venues, in the given city when one is given) and brands (about 4). ${DATA_RULE}`;
+const BASELINE_SYSTEM = `You are a helpful assistant with no access to any data source. Recommend real, specific names that fit the audience described. Reply with JSON only: artists (6), places (6 real venues, in the given city when one is given) and brands (4). Always give the full number of each. ${DATA_RULE}`;
 
 const norm = (s: string): string =>
   s
@@ -74,6 +74,7 @@ export async function fetchBaselineNames(llm: LlmProvider, r: BaselineRequest): 
     prompt: `Audience and project: ${fence(r.prompt)}\nCity: ${r.city ? fence(r.city) : "none given"}`,
     schema: toToolParameters(BaselineSchema) as JsonObject,
     tier: "main",
+    route: "fast",
   });
   const parsed = BaselineSchema.safeParse(stripNulls(raw));
   if (!parsed.success) return [];
@@ -260,10 +261,17 @@ export async function scoreProof(i: ProofInput): Promise<TasteProof | undefined>
   };
 }
 
-/** Starts the baseline in the background; never rejects (a failed baseline simply means no proof). */
-export function startBaseline(llm: LlmProvider, qloo: QlooClient, r: BaselineRequest): Promise<PickRef[]> {
+/**
+ * Starts the baseline in the background; never rejects (a failed baseline simply means no proof).
+ * The LLM call starts at once; `gate` holds back the Qloo lookups (about 16 searches) so they do not queue
+ * in front of the graph walk's own calls.
+ */
+export function startBaseline(llm: LlmProvider, qloo: QlooClient, r: BaselineRequest, gate?: Promise<unknown>): Promise<PickRef[]> {
   return fetchBaselineNames(llm, r)
-    .then((picks) => resolveBaseline(qloo, picks))
+    .then(async (picks) => {
+      if (gate) await gate;
+      return resolveBaseline(qloo, picks);
+    })
     .catch((e: unknown) => {
       logWarn("taste proof: baseline unavailable", e);
       return [];

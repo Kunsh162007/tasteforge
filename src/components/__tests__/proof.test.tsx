@@ -80,3 +80,18 @@ describe("TasteProofPanel", () => {
     expect(container.firstChild).toBeNull();
   });
 });
+
+describe("TasteProofPanel verdict", () => {
+  it("opens with one plain sentence and a legend, and gives each check a plain-language question", () => {
+    render(<TasteProofPanel proof={sampleProof} />);
+    expect(screen.getByText(/A plain AI answer named 1 of its 5 picks that Qloo has no record of/)).toBeTruthy();
+    expect(screen.getByText("Do these names exist in Qloo's data at all?")).toBeTruthy();
+    expect(document.getElementById("proof")).not.toBeNull();
+  });
+
+  it("does not claim a miss when every plain pick was found", () => {
+    const found = sampleProof.baseline.map((p) => ({ ...p, affinity: p.affinity ?? 0.2 }));
+    render(<TasteProofPanel proof={{ ...sampleProof, baseline: found, baselineNotFound: 0 }} />);
+    expect(screen.getByText(/every name was found/)).toBeTruthy();
+  });
+});

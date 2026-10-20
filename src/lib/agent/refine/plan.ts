@@ -46,12 +46,14 @@ function idsOf(path: SlotPath, item: Item, byId: ReadonlyMap<string, Evidence>):
     else out.entityIds.push(item.qlooId);
     return out;
   }
-  const wanted = normLabel(item.label);
+  // A palette swatch is named like a colour; the Qloo tags it came from are in `tags`.
+  const sourceTags = (item as { tags?: readonly string[] }).tags ?? [];
+  const wanted = new Set([normLabel(item.label), ...sourceTags.map(normLabel)]);
   for (const evId of item.evidence) {
     const record = byId.get(evId);
     if (!record) continue;
-    for (const t of record.tags ?? []) if (normLabel(t.name) === wanted) out.tagIds.push(t.id);
-    for (const e of record.entities ?? []) if (normLabel(e.name) === wanted) (path === HOTSPOTS ? out.cellIds : out.entityIds).push(e.id);
+    for (const t of record.tags ?? []) if (wanted.has(normLabel(t.name))) out.tagIds.push(t.id);
+    for (const e of record.entities ?? []) if (wanted.has(normLabel(e.name))) (path === HOTSPOTS ? out.cellIds : out.entityIds).push(e.id);
   }
   return out;
 }

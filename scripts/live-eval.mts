@@ -31,7 +31,7 @@ function describe(e: AgentEvent): string | undefined {
       calls.set(e.id, `${e.name} ${JSON.stringify(e.args).replace(/[A-F0-9]{8}-[A-F0-9-]{27}/g, "<id>").slice(0, 200)}`);
       return undefined;
     case "tool_result":
-      return `result ${e.ok ? "ok " : "ERR"} ${e.summary.slice(0, 110)}${e.ok ? "" : `  <= ${calls.get(e.id)}`}`;
+      return `result ${e.ok ? "ok " : "ERR"} ${e.durationMs === undefined ? "" : `${(e.durationMs / 1000).toFixed(1)}s `}${e.summary.slice(0, 110)}${e.ok ? "" : `  <= ${calls.get(e.id)}`}`;
     case "error":
       return `error  ${e.message}`;
     default:

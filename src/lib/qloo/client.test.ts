@@ -386,3 +386,73 @@ describe("request limiter", () => {
     expect(starts[starts.length - 1] - starts[0]).toBeGreaterThanOrEqual(4 * 15 * 0.7);
   });
 });
+
+describe("hedged requests and shared answers", () => {
+  function hangingFetch(init?: RequestInit): Promise<Response> {
+    return new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    });
+  }
+
+  function hedgedClient(handler: (call: number, init: RequestInit) => Promise<Response>) {
+    let calls = 0;
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => handler(++calls, init ?? {}));
+    const client = createQlooClient({
+      apiKey: KEY,
+      baseUrl: BASE,
+      mode: "live",
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      timeoutMs: 300,
+      hedgeAfterMs: 20,
+      retry: { sleep: noSleep },
+    });
+    return { client, fetchImpl };
+  }
+
+  it("sends one duplicate when the first request is slow and takes the first answer", async () => {
+    const { client, fetchImpl } = hedgedClient((call, init) => (call === 1 ? hangingFetch(init) : Promise.resolve(jsonResponse(entityBody))));
+    const started = Date.now();
+    expect((await client.search({ query: "x" })).data).toHaveLength(1);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(Date.now() - started).toBeLessThan(250);
+  });
+
+  it("does not send a duplicate when the first request answers in time", async () => {
+    const { client, fetchImpl } = hedgedClient(async () => jsonResponse(entityBody));
+    await client.search({ query: "x" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails only when both the request and its duplicate fail", async () => {
+    const { client, fetchImpl } = hedgedClient((_call, init) => hangingFetch(init));
+    const err = (await client.search({ query: "x" }).catch((e: unknown) => e)) as QlooError;
+    expect(err.kind).toBe("timeout");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("answers identical in-flight requests with one HTTP call", async () => {
+    const { client, fetchImpl } = hedgedClient(async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      return jsonResponse(entityBody);
+    });
+    const [a, b] = await Promise.all([client.search({ query: "same" }), client.search({ query: "same" })]);
+    expect(a.data).toEqual(b.data);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("cache lifetime", () => {
+  it("keeps name searches for a day and insights for the default hour", async () => {
+    let now = 0;
+    const { createCache } = await import("./cache");
+    const cache = createCache<unknown>({ maxEntries: 10, ttlMs: 1000, now: () => now });
+    const fetchImpl = vi.fn(async () => jsonResponse(entityBody));
+    const client = createQlooClient({ apiKey: KEY, baseUrl: BASE, mode: "live", fetchImpl: fetchImpl as unknown as typeof fetch, cache, retry: { sleep: noSleep } });
+    await client.search({ query: "x" });
+    await client.insights({ type: ENTITY_TYPES.place, locationQuery: "Brooklyn" });
+    now = 5_000;
+    await client.search({ query: "x" });
+    await client.insights({ type: ENTITY_TYPES.place, locationQuery: "Brooklyn" });
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+});

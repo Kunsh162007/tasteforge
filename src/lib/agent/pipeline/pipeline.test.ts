@@ -343,3 +343,50 @@ describe("hotspot naming", () => {
     expect(named.ledger.records.find((r) => r.summary.includes("heatmap hotspots"))?.entities?.[0].name).toBe("Williamsburg");
   });
 });
+
+describe("runPipeline time budget", () => {
+  /** Qloo whose place and tag-analysis calls never answer. */
+  function stuckPlaces(): QlooClient {
+    const never = new Promise<never>(() => undefined);
+    return {
+      ...mock,
+      insights: (p) => (p.type === "urn:entity:place" ? never : mock.insights(p)),
+      entityTags: () => never,
+    };
+  }
+
+  it("writes the brief from what arrived when the walk runs out of time, and marks the missing sections", async () => {
+    const { result, events } = await run(goodRoutes(), { qloo: stuckPlaces(), timeoutMs: 400 });
+    expect(result.ok).toBe(true);
+    expect(events.find((e) => e.type === "stage" && e.stage === "walk" && e.status === "done")).toMatchObject({ detail: expect.stringContaining("partial") });
+    expect(result.brief?.sectionConfidence?.aesthetic).toBe("low");
+    expect(result.brief?.sectionConfidence?.sound).not.toBe("low");
+    const left = events.filter((e) => e.type === "tool_result" && !e.ok && e.summary.startsWith("Left out"));
+    expect(left.length).toBeGreaterThan(0);
+  });
+
+  it("every started call ends with a tool_result, and nothing is reported after the brief", async () => {
+    const { events } = await run(goodRoutes(), { qloo: stuckPlaces(), timeoutMs: 400 });
+    const started = events.filter((e) => e.type === "tool_call").map((e) => (e.type === "tool_call" ? e.id : ""));
+    const ended = new Set(events.flatMap((e) => (e.type === "tool_result" ? [e.id] : [])));
+    expect(started.every((id) => ended.has(id))).toBe(true);
+    expect(events.at(-1)?.type).toBe("brief");
+  });
+
+  it("does not wait for trending: a trending call that never answers is left out", async () => {
+    const never = new Promise<never>(() => undefined);
+    const qloo: QlooClient = { ...mock, trending: () => never };
+    const started = Date.now();
+    const { result, events } = await run(goodRoutes(), { qloo, timeoutMs: 20_000 });
+    expect(result.ok).toBe(true);
+    expect(Date.now() - started).toBeLessThan(8_000);
+    expect(events.some((e) => e.type === "tool_result" && e.name === "qloo_trending" && !e.ok && e.summary.startsWith("Left out"))).toBe(true);
+  });
+
+  it("reports how long each call took", async () => {
+    const { events } = await run(goodRoutes());
+    const results = events.filter((e) => e.type === "tool_result");
+    expect(results.length).toBeGreaterThan(5);
+    expect(results.every((e) => typeof e.durationMs === "number" && e.durationMs >= 0)).toBe(true);
+  });
+});

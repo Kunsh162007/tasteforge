@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { Logo } from "./Logo";
 
 /** Masthead, main column and colophon for pages outside the main app flow (shared brief, 404). */
 export function PageShell({ children, tools }: { children: ReactNode; tools?: ReactNode }) {
@@ -7,6 +8,7 @@ export function PageShell({ children, tools }: { children: ReactNode; tools?: Re
     <div className="shell">
       <header className="masthead">
         <Link className="masthead__mark" href="/">
+          <Logo />
           TasteForge
         </Link>
         <p className="masthead__tag">Cultural briefs, grounded in what people actually love.</p>

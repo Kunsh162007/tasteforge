@@ -6,7 +6,8 @@ export type CacheOptions = {
 
 export type Cache<T> = {
   get(key: string): T | undefined;
-  set(key: string, value: T): void;
+  /** `ttlMs` overrides the default lifetime for this entry (stable lookups such as name searches live longer). */
+  set(key: string, value: T, ttlMs?: number): void;
   size(): number;
   clear(): void;
 };
@@ -38,9 +39,9 @@ export function createCache<T>(options: CacheOptions): Cache<T> {
       store.set(key, entry);
       return structuredClone(entry.value);
     },
-    set(key, value) {
+    set(key, value, entryTtlMs) {
       store.delete(key);
-      store.set(key, { value: structuredClone(value), expiresAt: now() + ttlMs });
+      store.set(key, { value: structuredClone(value), expiresAt: now() + (entryTtlMs ?? ttlMs) });
       while (store.size > maxEntries) {
         const oldest = store.keys().next().value as string;
         store.delete(oldest);

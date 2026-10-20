@@ -26,7 +26,9 @@ export const venueTagIds = (tagIds: readonly string[]): string[] => tagIds.filte
 function ownTags(kind: SignalKind, taste: readonly string[]): string[] {
   if (kind === "artist") return taste.filter(isMusicTag);
   if (kind === "place") return taste.filter((t) => !isMusicTag(t) && !isMediaTag(t));
-  if (kind === "movie" || kind === "tv_show") return taste.filter((t) => !isCustomerTag(t));
+  // verified live 2026-10-20: music-genre tags fed to a film query returned blockbusters unrelated to the audience
+  // (Star Trek for ambient / lo-fi fans) and made it the slowest call of the walk; the seeds alone found Shoplifters.
+  if (kind === "movie" || kind === "tv_show") return taste.filter((t) => !isCustomerTag(t) && !isMusicTag(t));
   return [...taste];
 }
 
@@ -41,8 +43,9 @@ const MAX_TAGS_ALONE = 6;
 export function tagsFor(kind: SignalKind, s: Pick<Signals, "tagIds" | "entityIds">): string[] {
   const taste = s.tagIds.filter((t) => !isVenueTag(t));
   const own = ownTags(kind, taste);
-  // An artist query with seed entities stays on the entities; otherwise any taste tag beats an empty query.
-  const chosen = own.length > 0 ? own : kind === "artist" && s.entityIds.length > 0 ? [] : taste;
+  // An artist or film query with seed entities stays on the entities; otherwise any taste tag beats an empty query.
+  const entityOnly = (kind === "artist" || kind === "movie" || kind === "tv_show") && s.entityIds.length > 0;
+  const chosen = own.length > 0 ? own : entityOnly ? [] : taste;
   return chosen.slice(0, s.entityIds.length > 0 ? MAX_TAGS_WITH_ENTITIES : MAX_TAGS_ALONE);
 }
 

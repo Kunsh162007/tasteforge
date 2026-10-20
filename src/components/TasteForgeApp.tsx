@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useBriefRun } from "@/hooks/useBriefRun";
 import { useCompare } from "@/hooks/useCompare";
 import { useShowcase } from "@/hooks/useShowcase";
@@ -25,12 +25,12 @@ import { showcaseToRunState, type ShowcaseItem } from "@/ui/showcase";
 import { BriefView } from "./BriefView";
 import { CompareBar } from "./CompareBar";
 import { CompareView } from "./CompareView";
-import { Compose } from "./Compose";
 import { EvidenceProvider } from "./EvidenceContext";
+import { Home } from "./Home";
+import { Logo } from "./Logo";
 import { FeedbackContext, type FeedbackApi } from "./FeedbackContext";
 import { ChangeSummary, RefineBar, RefineHint } from "./RefineBar";
 import { ShareButton } from "./ShareButton";
-import { ShowcaseGallery } from "./ShowcaseGallery";
 import { TasteProofPanel } from "./TasteProofPanel";
 import { WalkView } from "./WalkView";
 
@@ -41,6 +41,12 @@ export function TasteForgeApp({ demo = false }: { demo?: boolean }) {
   const [feedback, setFeedback] = useState<FeedbackState>(NO_FEEDBACK);
   const [seenBrief, setSeenBrief] = useState(state.brief);
   const [dismissedChanges, setDismissedChanges] = useState(state.changes);
+
+  // The showcase is the primary path on the home page, so it loads as soon as the page does.
+  const openShowcase = showcase.open;
+  useEffect(() => {
+    if (!demo) void openShowcase();
+  }, [demo, openShowcase]);
 
   // A new brief arrives: after a refine, keep marks on items that survived; for a fresh run, start clean.
   if (state.brief !== seenBrief) {
@@ -66,7 +72,6 @@ export function TasteForgeApp({ demo = false }: { demo?: boolean }) {
     compare.close();
     const next = showcaseToRunState(item);
     if (!next) return;
-    showcase.close();
     load(next);
   };
 
@@ -78,12 +83,15 @@ export function TasteForgeApp({ demo = false }: { demo?: boolean }) {
     const signalSig = state.signatures?.signals;
     void compare.start({ prompt: state.request.prompt, mode: state.request.mode, signals: state.signals, ...(signalSig ? { signatures: { signals: signalSig } } : {}) }, cityB);
   };
+  // The brief can arrive before its proof: show a placeholder until the proof lands, the stage fails or the stream ends.
+  const proofPending = !state.ended && !state.proof && state.stages.proof.status !== "failed" && state.stages.proof.status !== "skipped";
   const inWalk = state.phase === "running" || state.phase === "needs_input" || state.phase === "error";
 
   return (
     <div className="shell">
       <header className="masthead">
         <Link className="masthead__mark" href="/" onClick={(e) => { if (state.phase !== "idle") { e.preventDefault(); compare.close(); reset(); } }}>
+          <Logo />
           TasteForge
         </Link>
         <p className="masthead__tag">Cultural briefs, grounded in what people actually love.</p>
@@ -102,26 +110,13 @@ export function TasteForgeApp({ demo = false }: { demo?: boolean }) {
 
       <main id="main" className="stage-area">
         {state.phase === "idle" ? (
-          <div className="intro">
-            <h1 className="intro__title">Know who you are making it for.</h1>
-            <p className="intro__lede">
-              Describe a project. We walk Qloo&rsquo;s taste graph and hand back a one-page creative brief: palette, places, sound, pairings,
-              with the evidence for every line.
-            </p>
-            <Compose
-              busy={false}
-              showcaseBusy={showcase.phase === "loading"}
-              onSubmit={run}
-              onShowcase={() => void showcase.open()}
-            />
-            <ShowcaseGallery
-              phase={showcase.phase}
-              items={showcase.items}
-              onOpen={openItem}
-              onRetry={() => void showcase.open(true)}
-              onClose={showcase.close}
-            />
-          </div>
+          <Home
+            showcasePhase={showcase.phase}
+            showcaseItems={showcase.items}
+            onOpenShowcase={openItem}
+            onRetryShowcase={() => void showcase.open(true)}
+            onSubmit={run}
+          />
         ) : null}
 
         {inWalk ? <WalkView state={state} onChoose={choose} onRetry={retry} onReset={reset} /> : null}
@@ -143,8 +138,8 @@ export function TasteForgeApp({ demo = false }: { demo?: boolean }) {
               {state.changes && state.changes !== dismissedChanges ? (
                 <ChangeSummary changes={state.changes} onDismiss={() => setDismissedChanges(state.changes)} />
               ) : null}
-              <BriefView brief={state.brief} dropped={state.dropped} />
-              <TasteProofPanel proof={state.proof} pending={state.stages.proof.status === "active"} />
+              <BriefView brief={state.brief} dropped={state.dropped} hasProof={Boolean(state.proof) || proofPending} />
+              <TasteProofPanel proof={state.proof} pending={proofPending} />
               {canMark && cityA ? <CompareBar city={cityA} onCompare={startCompare} /> : null}
               {canMark ? (
                 <RefineBar

@@ -83,6 +83,8 @@ export type AgentEvent =
       readonly ok: boolean;
       readonly summary: string;
       readonly evidenceId?: string;
+      /** Wall time of the call in ms (additive field, absent on older streams). */
+      readonly durationMs?: number;
     }
   | {
       readonly type: "brief";

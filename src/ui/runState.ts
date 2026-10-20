@@ -2,17 +2,44 @@ import { diffBriefs, type BriefChanges } from "./briefChanges";
 import type { Brief, BriefSignals, DroppedItem, Evidence, LedgerSignatures, NeedsInputEvent, StageName, TasteProof, UiEvent } from "./contract";
 import type { BriefRequestBody } from "./contract";
 
-export const STAGES: readonly { key: StageName; label: string }[] = [
-  { key: "seeds", label: "Seeds" },
-  { key: "resolve", label: "Resolve" },
-  { key: "walk", label: "Walk" },
-  { key: "critic", label: "Critic" },
-  { key: "synthesis", label: "Synthesis" },
-  { key: "proof", label: "Proof" },
+export const STAGES: readonly { key: StageName; label: string; plain: string }[] = [
+  { key: "seeds", label: "Seeds", plain: "Reading your description" },
+  { key: "resolve", label: "Resolve", plain: "Matching names in Qloo" },
+  { key: "walk", label: "Walk", plain: "Walking the taste graph" },
+  { key: "critic", label: "Critic", plain: "Checking the evidence" },
+  { key: "synthesis", label: "Synthesis", plain: "Writing the brief" },
+  { key: "proof", label: "Proof", plain: "Scoring against a plain AI answer" },
 ];
 
 export type StageStatus = "idle" | "active" | "done" | "failed" | "skipped";
-export type TrailLine = { id: string; text: string; ok: boolean; pending: boolean };
+export type TrailLine = {
+  id: string;
+  text: string;
+  /** The question asked, without the answer (for the live walk view). */
+  label: string;
+  /** What Qloo answered, once it has. */
+  summary?: string;
+  ok: boolean;
+  pending: boolean;
+  /** How long the call took, when the server reports it (optional field on tool_result). */
+  durationMs?: number;
+};
+
+/** How the walk log shows a call: a call the server dropped to stay on time ("Left out: ...") is skipped, not an error. */
+export type TrailState = "pending" | "ok" | "skipped" | "failed";
+
+export function trailState(line: Pick<TrailLine, "pending" | "ok" | "summary">): TrailState {
+  if (line.pending) return "pending";
+  if (line.ok) return "ok";
+  return line.summary?.startsWith("Left out") ? "skipped" : "failed";
+}
+
+/** A stage note the UI shows quietly: "partial: 2 calls cut off" or "skipped, out of time" are not failures. */
+export function stageNote(detail: string | undefined): "partial" | "skipped" | undefined {
+  if (!detail) return undefined;
+  if (detail.toLowerCase().includes("partial")) return "partial";
+  return detail.toLowerCase().startsWith("skipped") ? "skipped" : undefined;
+}
 
 export type RunState = {
   phase: "idle" | "running" | "needs_input" | "done" | "error";
@@ -34,6 +61,8 @@ export type RunState = {
   refine?: { status: "running" | "error"; message?: string; retryable?: boolean };
   /** What the last refine run changed. */
   changes?: BriefChanges;
+  /** True once the stream has ended (or the run was loaded whole), so nothing more will arrive. */
+  ended?: boolean;
 };
 
 const idleStages = (): RunState["stages"] =>
@@ -65,7 +94,7 @@ export function startRefine(state: RunState): RunState {
       REFINE_SKIPPED.includes(s.key) ? { status: "skipped" as StageStatus, detail: "reused" } : { status: "idle" as StageStatus },
     ]),
   ) as RunState["stages"];
-  return { ...state, phase: "done", stages, trail: [], proof: undefined, refine: { status: "running" }, changes: undefined };
+  return { ...state, phase: "done", stages, trail: [], proof: undefined, refine: { status: "running" }, changes: undefined, ended: undefined };
 }
 
 /**
@@ -122,11 +151,17 @@ export function describeCall(name: string, args: Record<string, unknown>): strin
 
 function withTool(state: RunState, event: Extract<UiEvent, { type: "tool_call" | "tool_result" }>): RunState {
   if (event.type === "tool_call") {
-    const line: TrailLine = { id: event.id, text: describeCall(event.name, event.args), ok: true, pending: true };
+    const label = describeCall(event.name, event.args);
+    const line: TrailLine = { id: event.id, text: label, label, ok: true, pending: true };
     return { ...state, trail: [...state.trail, line] };
   }
+  // `durationMs` is an optional, newer field: read it defensively so older servers still work.
+  const raw = (event as { durationMs?: unknown }).durationMs;
+  const durationMs = typeof raw === "number" && Number.isFinite(raw) && raw >= 0 ? raw : undefined;
   const trail = state.trail.map((l) =>
-    l.id === event.id ? { ...l, pending: false, ok: event.ok, text: `${l.text}: ${event.summary}` } : l,
+    l.id === event.id
+      ? { ...l, pending: false, ok: event.ok, text: `${l.text}: ${event.summary}`, summary: event.summary, ...(durationMs !== undefined ? { durationMs } : {}) }
+      : l,
   );
   return { ...state, trail };
 }
@@ -169,9 +204,11 @@ export function reduceEvent(state: RunState, event: UiEvent): RunState {
     }
     case "error":
       return failRun(state, event.message, event.retryable);
-    case "done":
+    case "done": {
       if (state.refine?.status === "running" && !event.ok) return failRun(state, "The refinement ended before a new brief was ready.", true);
-      return state.phase === "running" && !state.brief ? failRun(state, "The run ended before a brief was ready.", true) : state.phase === "running" ? { ...state, phase: "done" } : state;
+      if (state.phase === "running" && !state.brief) return failRun(state, "The run ended before a brief was ready.", true);
+      return { ...state, ended: true, ...(state.phase === "running" ? { phase: "done" as const } : {}) };
+    }
     default:
       return state;
   }

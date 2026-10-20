@@ -19,7 +19,8 @@ const KNOWN_SEEDS: readonly { name: string; kind: string }[] = [
   { name: "Radiohead", kind: "artist" },
   { name: "A24", kind: "brand" },
 ];
-const SWATCH_HEX = ["#8A6F4D", "#3F5A4B", "#C9A66B", "#6B4F4F", "#2F3E55", "#B8785A"] as const;
+const SWATCH_HEX = ["#8A6F4D", "#3F5A4B", "#E3D3B0", "#6B4F4F", "#C4492B", "#B8785A"] as const;
+const SWATCH_NAMES = ["Walnut brown", "Moss green", "Brass gold", "Oxblood", "Ink navy", "Clay terracotta"] as const;
 const MAX_ITEMS = 6;
 
 const grab = (prompt: string, label: string): string => unfence(new RegExp(`^${label}: (.*)$`, "m").exec(prompt)?.[1]?.trim() ?? "");
@@ -69,6 +70,15 @@ function tagItems(records: readonly Rec[], needle: string, detail: string): Item
   return out.slice(0, MAX_ITEMS);
 }
 
+/** Five named colours, each tied to one of the Qloo tags (cycling when there are fewer tags); none without tags. */
+function palette(tags: readonly Item[]): unknown[] {
+  if (tags.length === 0) return [];
+  return SWATCH_NAMES.slice(0, 5).map((label, i) => {
+    const t = tags[i % tags.length];
+    return { label, detail: t.detail, evidence: t.evidence, qlooId: t.qlooId, hex: SWATCH_HEX[i % SWATCH_HEX.length], tags: [t.label], role: i === 4 ? "accent" : "base" };
+  });
+}
+
 function hotspotItems(heat: Rec, city: string): Item[] {
   const spots = (heat.entities ?? []).slice(0, 5).map((e, i) => ({
     label: e.name.slice(0, 120),
@@ -96,7 +106,7 @@ function brief(prompt: string): unknown {
       demographics: demo.map((r) => ({ label: "Age and gender skew", detail: r.summary?.slice(0, 380), evidence: [r.evidence_id] })),
     },
     aesthetic: {
-      palette: [...decor, ...ambience].slice(0, 5).map((t, i) => ({ ...t, hex: SWATCH_HEX[i % SWATCH_HEX.length] })),
+      palette: palette([...decor, ...ambience]),
       lighting: ambience.slice(0, 3),
       materials: decor.slice(0, 3),
       referencePlaces: entityItems(records, ["place"], "Place this audience already loves."),

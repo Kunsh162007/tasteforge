@@ -23,12 +23,11 @@ const MODES: readonly { value: BriefMode; label: string; hint: string }[] = [
 
 type Props = {
   busy: boolean;
-  showcaseBusy: boolean;
   onSubmit: (body: BriefRequestBody) => void;
-  onShowcase: () => void;
 };
 
-export function Compose({ busy, showcaseBusy, onSubmit, onShowcase }: Props) {
+/** The secondary path: describe your own project. The showcase above is the instant one. */
+export function Compose({ busy, onSubmit }: Props) {
   const [mode, setMode] = useState<BriefMode>("know_audience");
   const [prompt, setPrompt] = useState("");
   const [city, setCity] = useState("");
@@ -50,7 +49,10 @@ export function Compose({ busy, showcaseBusy, onSubmit, onShowcase }: Props) {
   };
 
   return (
-    <form className="compose" onSubmit={submit}>
+    <form className="compose" onSubmit={submit} aria-labelledby="compose-h">
+      <h2 id="compose-h" className="section-title compose__title">
+        Or brief your own project
+      </h2>
       <fieldset className="modes">
         <legend className="sr-only">How would you like to start</legend>
         {MODES.map((m) => (
@@ -100,9 +102,7 @@ export function Compose({ busy, showcaseBusy, onSubmit, onShowcase }: Props) {
         <button type="submit" className="btn-primary" disabled={!canSubmit}>
           Build the brief
         </button>
-        <button type="button" className="link-quiet" onClick={onShowcase} disabled={busy || showcaseBusy}>
-          {showcaseBusy ? "Fetching showcase..." : "See showcase briefs"}
-        </button>
+        <p className="compose__time">Takes 20 to 60 seconds. You can watch every question we ask Qloo.</p>
       </div>
       <div className="examples">
         <p className="examples__label">Or start from an example</p>

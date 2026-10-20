@@ -4,7 +4,7 @@ import { loadLlmConfig, type ChainEntry, type LlmConfig } from "./config";
 import { createGeminiProvider } from "./gemini";
 import { createGroqProvider } from "./groq";
 import { createScriptedLlm } from "./scripted";
-import type { LlmError, LlmProvider } from "./types";
+import type { JsonRequest, LlmError, LlmProvider } from "./types";
 
 export { createMockLlm, type MockJsonStep, type MockLlm } from "./mock";
 export { loadLlmConfig, parseLlmChain, type LlmConfig, type ChainEntry } from "./config";
@@ -34,16 +34,34 @@ function entryFor(e: ChainEntry, config: LlmConfig, fetchImpl: typeof fetch | un
   return { id, provider: createGroqProvider({ apiKey: config.groqApiKey as string, model: e.model, fetchImpl }) };
 }
 
-/** Builds the model cascade from the config (see LLM_CHAIN), wrapped in the JSON response cache. */
+/** The chain a request is routed to: explicit route, else "fast" for the light tier. */
+export const routeOf = (req: JsonRequest): "fast" | "main" => req.route ?? (req.tier === "light" ? "fast" : "main");
+
+/**
+ * Builds the model cascades from the config (see LLM_CHAIN_FAST / LLM_CHAIN_MAIN), wrapped in the JSON response cache.
+ * The two chains share their cooldowns, so a model that hit a quota is skipped by both. The provider's name is the
+ * model that last answered a main (synthesis) call.
+ */
 export function createLlm(config: LlmConfig = loadLlmConfig(), o: CreateLlmOptions = {}): LlmProvider {
   if (config.provider === "mock") return createScriptedLlm();
-  const llm = createCascade(
-    config.chain.map((e) => entryFor(e, config, o.fetchImpl)),
-    {
-      now: o.now,
-      onCall: o.onCall,
-      onSwitch: o.onFallback ? (from, to, error) => o.onFallback?.(error, from, to) : undefined,
+  const cooldowns = new Map<string, number>();
+  const build = (chain: readonly ChainEntry[]): LlmProvider =>
+    createCascade(
+      chain.map((e) => entryFor(e, config, o.fetchImpl)),
+      {
+        now: o.now,
+        onCall: o.onCall,
+        cooldowns,
+        onSwitch: o.onFallback ? (from, to, error) => o.onFallback?.(error, from, to) : undefined,
+      },
+    );
+  const main = build(config.chain);
+  const fast = build(config.fastChain);
+  const routed: LlmProvider = {
+    get name() {
+      return main.name;
     },
-  );
-  return o.cache === false ? llm : withJsonCache(llm);
+    chatJson: (req) => (routeOf(req) === "fast" ? fast : main).chatJson(req),
+  };
+  return o.cache === false ? routed : withJsonCache(routed);
 }

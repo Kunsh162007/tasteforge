@@ -36,10 +36,13 @@ type ProofRequest = {
   readonly onEvent?: (event: AgentEvent) => void;
 };
 
-/** Starts the plain-LLM baseline alongside the main work so the proof only waits on scoring. */
-export function beginBaseline(o: ProofRequest): Promise<PickRef[]> {
+/**
+ * Starts the plain-LLM baseline alongside the main work so the proof only waits on scoring. `gate` (optional)
+ * delays its Qloo lookups until Qloo is otherwise idle.
+ */
+export function beginBaseline(o: ProofRequest, gate?: Promise<unknown>): Promise<PickRef[]> {
   const proofMs = o.proofTimeoutMs ?? PROOF_TIMEOUT_MS;
-  return startBaseline(boundedChatJson(o.llm, (o.timeoutMs ?? PIPELINE_TIMEOUT_MS) + proofMs), o.qloo, { prompt: o.prompt, city: o.city });
+  return startBaseline(boundedChatJson(o.llm, (o.timeoutMs ?? PIPELINE_TIMEOUT_MS) + proofMs), o.qloo, { prompt: o.prompt, city: o.city }, gate);
 }
 
 /** The proof stage: scores baseline and brief picks. A proof failure never fails the brief. */
@@ -83,11 +86,20 @@ export async function finishProof(o: ProofRequest, baseline: Promise<PickRef[]>,
  */
 export async function generateBrief(o: GenerateOptions): Promise<GenerateResult> {
   let baseline: Promise<PickRef[]> | undefined;
+  let release: () => void = () => undefined;
+  const walked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   // Only once the seeds resolved: a run that stops to ask the user a question must not spend a baseline LLM call.
   const onResolved = (): void => {
-    if (o.withProof !== false) baseline ??= beginBaseline(o);
+    if (o.withProof !== false) baseline ??= beginBaseline(o, walked);
     o.onResolved?.();
   };
-  const result = await runPipeline({ ...o, onResolved });
+  const onWalked = (): void => {
+    release();
+    o.onWalked?.();
+  };
+  const result = await runPipeline({ ...o, onResolved, onWalked });
+  release();
   return baseline ? finishProof(o, baseline, result) : result;
 }

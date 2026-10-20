@@ -18,6 +18,9 @@ export type ToolCall = {
 /** "light" selects the cheaper model (seeds, critic, baseline); "main" the synthesis model. */
 export type JsonTier = "main" | "light";
 
+/** Which model chain answers: "fast" for short calls (seeds, critic, baseline), "main" for the brief synthesis. */
+export type JsonRoute = "fast" | "main";
+
 /** JSON-mode request: no tools, the reply is a single JSON document. */
 export type JsonRequest = {
   readonly system: string;
@@ -25,6 +28,8 @@ export type JsonRequest = {
   /** JSON schema the reply must follow (sanitized subset). */
   readonly schema?: JsonObject;
   readonly tier?: JsonTier;
+  /** Chain to use; defaults to "fast" for the light tier and "main" otherwise. */
+  readonly route?: JsonRoute;
   /** A shorter prompt for a provider with a small token budget (the Groq free tier allows 8000 tokens a minute). */
   readonly compactPrompt?: string;
 };

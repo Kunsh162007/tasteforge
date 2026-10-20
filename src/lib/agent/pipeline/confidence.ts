@@ -19,7 +19,7 @@ function countItems(brief: Brief): Record<SectionKey, number> {
 
 function levelFor(items: number, stat: SectionStat | undefined): Confidence {
   if (items === 0 || !stat || stat.usable === 0) return "low";
-  const degraded = stat.fallbacks.length > 0;
+  const degraded = stat.fallbacks.length > 0 || (stat.skipped ?? 0) > 0;
   return items >= HIGH_ITEMS && !degraded ? "high" : "medium";
 }
 

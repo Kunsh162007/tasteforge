@@ -36,7 +36,7 @@ Scroll to **Taste proof**.
 
 - Lead with the three checks, in this order: picks Qloo could not find (a plain LLM names places and artists that do not exist in Qloo; TasteForge's are all Qloo results), real places in the city (TasteForge's places were located by Qloo with addresses), and only then audience fit.
 - Click a `trace` button on a TasteForge pick: it opens the Qloo call behind it.
-- Be straight about the fit gap: 0.86 vs 0.93 on average over three live runs on 2026-10-20 (Indore, London, New York). The claim is "every pick verified and traceable, never lower-fit, and catches non-existent local picks", not "10x better".
+- Be straight about the fit gap: fit is about equal (places 0.78 vs 0.79 over the 20-prompt benchmark in docs/BENCHMARK.md). The claim is "every pick verified, local and traceable; about half of a plain LLM's place picks are not", not "10x better".
 
 Notice the caption: affinity is fit with this audience's taste signals. It is Qloo's number, not ours.
 

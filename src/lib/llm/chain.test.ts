@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadLlmConfig, parseLlmChain, DEFAULT_LLM_CHAIN } from "./config";
+import { loadLlmConfig, parseLlmChain, DEFAULT_LLM_CHAIN, DEFAULT_LLM_CHAIN_FAST } from "./config";
 import { createLlm } from "./index";
 
 const json = (body: unknown, status = 200, headers: Record<string, string> = {}) =>
@@ -23,15 +23,28 @@ describe("parseLlmChain", () => {
 describe("chain config", () => {
   const keys = { GEMINI_API_KEY: "g", GROQ_API_KEY: "q" };
 
-  it("defaults to the documented cascade", () => {
+  it("defaults to the measured cascades: Groq first for both call types, Gemini as the deeper fallback", () => {
     expect(ids(loadLlmConfig(keys))).toEqual([
-      "gemini:gemini-3.5-flash-lite",
-      "gemini:gemini-3.5-flash",
-      "gemini:gemini-2.5-flash",
       "groq:openai/gpt-oss-120b",
+      "gemini:gemini-2.5-flash",
       "groq:qwen/qwen3.8-27b",
+      "gemini:gemini-3.5-flash",
+      "gemini:gemini-3.5-flash-lite",
+      "groq:openai/gpt-oss-20b",
     ]);
     expect(DEFAULT_LLM_CHAIN).toContain("groq:qwen/qwen3.8-27b");
+    const fast = loadLlmConfig(keys).fastChain.map((e) => `${e.provider}:${e.model}`);
+    expect(fast[0]).toBe("groq:openai/gpt-oss-120b");
+    expect(fast).toHaveLength(DEFAULT_LLM_CHAIN_FAST.split(",").length);
+  });
+
+  it("LLM_CHAIN_FAST and LLM_CHAIN_MAIN override their own route; LLM_CHAIN covers a route without its own", () => {
+    const c = loadLlmConfig({ ...keys, LLM_CHAIN_FAST: "gemini:f", LLM_CHAIN_MAIN: "groq:m" });
+    expect(c.fastChain.map((e) => e.model)).toEqual(["f"]);
+    expect(c.chain.map((e) => e.model)).toEqual(["m"]);
+    const shared = loadLlmConfig({ ...keys, LLM_CHAIN: "gemini:x", LLM_CHAIN_FAST: "groq:f" });
+    expect(shared.fastChain.map((e) => e.model)).toEqual(["f"]);
+    expect(shared.chain.map((e) => e.model)).toEqual(["x"]);
   });
 
   it("uses LLM_CHAIN when set and drops entries whose provider has no key", () => {
@@ -39,12 +52,17 @@ describe("chain config", () => {
     expect(ids(loadLlmConfig({ GEMINI_API_KEY: "g", LLM_CHAIN: "groq:a,gemini:b" }))).toEqual(["gemini:b"]);
   });
 
-  it("keeps the legacy variables working: GEMINI_MODEL first, LLM_PROVIDER=groq puts Groq first", () => {
-    expect(ids(loadLlmConfig({ ...keys, GEMINI_MODEL: "gemini-x" }))[0]).toBe("gemini:gemini-x");
+  it("keeps the legacy variables working: each leads its own provider's group, LLM_PROVIDER=groq puts Groq first", () => {
+    const gem = ids(loadLlmConfig({ ...keys, GEMINI_MODEL: "gemini-x" }));
+    expect(gem.indexOf("gemini:gemini-x")).toBe(gem.findIndex((i) => i.startsWith("gemini:")));
+    expect(gem[0]).toBe("groq:openai/gpt-oss-120b");
     expect(ids(loadLlmConfig({ ...keys, GEMINI_MODEL: "gemini-3.5-flash-lite" })).filter((i) => i.includes("flash-lite"))).toHaveLength(1);
     expect(ids(loadLlmConfig({ ...keys, LLM_PROVIDER: "groq", GROQ_MODEL: "m" }))[0]).toBe("groq:m");
     const mixed = ids(loadLlmConfig({ ...keys, GROQ_MODEL: "openai/gpt-oss-20b" }));
-    expect(mixed.indexOf("groq:openai/gpt-oss-20b")).toBeGreaterThan(mixed.indexOf("gemini:gemini-2.5-flash"));
+    expect(mixed[0]).toBe("groq:openai/gpt-oss-20b");
+    expect(mixed.filter((i) => i === "groq:openai/gpt-oss-20b")).toHaveLength(1);
+    const fast = loadLlmConfig({ ...keys, GEMINI_MODEL: "gemini-3.5-flash-lite" }).fastChain.map((e) => `${e.provider}:${e.model}`);
+    expect(fast[0].startsWith("groq:")).toBe(true);
   });
 
   it("requires a key for at least one chain entry", () => {
@@ -65,7 +83,10 @@ describe("createLlm cascade", () => {
       }
       return json({ candidates: [{ content: { parts: [{ text: '{"ok":true}' }] } }] });
     }) as unknown as typeof fetch;
-    const llm = createLlm(loadLlmConfig({ GEMINI_API_KEY: "g" }), { fetchImpl, cache: false });
+    const llm = createLlm(
+      loadLlmConfig({ GEMINI_API_KEY: "g", LLM_CHAIN_MAIN: "gemini:gemini-3.5-flash-lite,gemini:gemini-3.5-flash,gemini:gemini-2.5-flash" }),
+      { fetchImpl, cache: false },
+    );
     expect(await llm.chatJson({ system: "s", prompt: "a" })).toEqual({ ok: true });
     expect(llm.name).toBe("gemini:gemini-3.5-flash");
     await llm.chatJson({ system: "s", prompt: "b" });
@@ -76,8 +97,42 @@ describe("createLlm cascade", () => {
     const fetchImpl = vi.fn(async (url: string | URL | Request) =>
       String(url).includes("groq") ? json({ choices: [{ message: { content: '{"g":1}' } }] }) : json({}, 503),
     ) as unknown as typeof fetch;
-    const llm = createLlm(loadLlmConfig({ GEMINI_API_KEY: "g", GROQ_API_KEY: "q" }), { fetchImpl, cache: false });
+    const llm = createLlm(
+      loadLlmConfig({ GEMINI_API_KEY: "g", GROQ_API_KEY: "q", LLM_CHAIN_MAIN: "gemini:gemini-3.5-flash,groq:openai/gpt-oss-120b" }),
+      { fetchImpl, cache: false },
+    );
     expect(await llm.chatJson({ system: "s", prompt: "a" })).toEqual({ g: 1 });
     expect(llm.name).toBe("groq:openai/gpt-oss-120b");
+  });
+
+  it("routes light-tier and fast-route requests to the fast chain and the rest to the main chain", async () => {
+    const urls: string[] = [];
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      urls.push(String(url));
+      return json({ choices: [{ message: { content: "{}" } }] });
+    }) as unknown as typeof fetch;
+    const llm = createLlm(
+      loadLlmConfig({ GROQ_API_KEY: "q", LLM_CHAIN_FAST: "groq:fast-model", LLM_CHAIN_MAIN: "groq:main-model" }),
+      { fetchImpl, cache: false },
+    );
+    const bodies = () => (fetchImpl as unknown as { mock: { calls: [unknown, { body: string }][] } }).mock.calls.map((c) => JSON.parse(c[1].body).model);
+    await llm.chatJson({ system: "s", prompt: "a", tier: "light" });
+    await llm.chatJson({ system: "s", prompt: "b", tier: "main", route: "fast" });
+    await llm.chatJson({ system: "s", prompt: "c", tier: "main" });
+    expect(bodies()).toEqual(["fast-model", "fast-model", "main-model"]);
+    expect(llm.name).toBe("groq:main-model");
+  });
+
+  it("shares cooldowns between chains: a model that hit its quota on one route is skipped on the other", async () => {
+    const hits: string[] = [];
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const model = JSON.parse(String(init?.body)).model as string;
+      hits.push(model);
+      return model === "a" ? json({ error: { message: "Rate limit" } }, 429, { "retry-after": "30" }) : json({ choices: [{ message: { content: "{}" } }] });
+    }) as unknown as typeof fetch;
+    const llm = createLlm(loadLlmConfig({ GROQ_API_KEY: "q", LLM_CHAIN_FAST: "groq:a,groq:b", LLM_CHAIN_MAIN: "groq:a,groq:c" }), { fetchImpl, cache: false });
+    await llm.chatJson({ system: "s", prompt: "x", tier: "light" });
+    await llm.chatJson({ system: "s", prompt: "y", tier: "main" });
+    expect(hits).toEqual(["a", "b", "c"]);
   });
 });

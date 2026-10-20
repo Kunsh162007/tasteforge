@@ -51,6 +51,11 @@ export type QlooClientOptions = {
   readonly maxConcurrent?: number;
   /** Minimum gap between request starts, in ms. */
   readonly minGapMs?: number;
+  /**
+   * Hedged request: when no answer arrives within this many ms (and before the timeout), one duplicate request is
+   * sent and the first success wins. Live mode defaults to 8 s; 0 disables.
+   */
+  readonly hedgeAfterMs?: number;
 };
 
 export type QlooRetryOptions = {
@@ -72,8 +77,16 @@ export type QlooClient = {
   trending(p: TrendingParams): Promise<QlooResult<TrendPoint>>;
 };
 
-/** verified live 2026-10-20: broad insights queries (films, London places) regularly take 5 to 10 s and sometimes 25 to 40 s. */
-const DEFAULT_TIMEOUT_MS = 30_000;
+/**
+ * verified live 2026-10-20: broad insights queries (films, London places) regularly take 5 to 10 s and sometimes 25 to 40 s.
+ * Measured again 2026-10-20 (profile:live): the same New York place query answered in 3.5 s, 12 s and not at all in 30 s,
+ * so a short timeout plus one hedged duplicate beats one long wait.
+ */
+const DEFAULT_TIMEOUT_MS = 15_000;
+const LIVE_HEDGE_AFTER_MS = 8_000;
+/** Name searches and tag lookups do not change from hour to hour. */
+const STABLE_TTL_MS = 24 * 60 * 60 * 1000;
+const STABLE_PATHS = ["/search", "/v2/tags"];
 const CACHE_MAX_ENTRIES = 500;
 const MAX_TREND_ENTITIES = 3;
 const CACHE_TTL_MS = 60 * 60 * 1000;
@@ -149,25 +162,68 @@ export function createQlooClient(options: QlooClientOptions): QlooClient {
     options.minGapMs ?? (mode === "live" ? LIVE_MIN_GAP_MS : 0),
   );
 
-  async function send(url: string): Promise<unknown> {
+  type Attempt = { readonly promise: Promise<unknown>; abort(): void };
+
+  /** One HTTP request with its own timeout; `abort` cancels it (the loser of a hedge). */
+  function startSend(url: string): Attempt {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      const headers: Record<string, string> = { Accept: "application/json" };
-      if (apiKey) headers["X-Api-Key"] = apiKey;
-      const res = await fetchImpl(url, { method: "GET", headers, signal: controller.signal });
-      if (!res.ok) throw errorForStatus(res.status);
-      return await readJson(res);
-    } catch (e) {
-      if (e instanceof QlooError) throw e;
-      if (isAbort(e)) {
-        throw new QlooError("timeout", `Qloo request timed out after ${timeoutMs}ms.`);
+    const run = async (): Promise<unknown> => {
+      try {
+        const headers: Record<string, string> = { Accept: "application/json" };
+        if (apiKey) headers["X-Api-Key"] = apiKey;
+        const res = await fetchImpl(url, { method: "GET", headers, signal: controller.signal });
+        if (!res.ok) throw errorForStatus(res.status);
+        return await readJson(res);
+      } catch (e) {
+        if (e instanceof QlooError) throw e;
+        if (isAbort(e)) {
+          throw new QlooError("timeout", `Qloo request timed out after ${timeoutMs}ms.`);
+        }
+        // Original message is dropped on purpose: it could echo request details.
+        throw new QlooError("network", "Could not reach Qloo (network error).");
+      } finally {
+        clearTimeout(timer);
       }
-      // Original message is dropped on purpose: it could echo request details.
-      throw new QlooError("network", "Could not reach Qloo (network error).");
-    } finally {
-      clearTimeout(timer);
-    }
+    };
+    return { promise: run(), abort: () => controller.abort() };
+  }
+
+  const hedgeAfterMs = options.hedgeAfterMs ?? (mode === "live" ? LIVE_HEDGE_AFTER_MS : 0);
+
+  /**
+   * Sends the request and, when it is slow, one duplicate; the first success wins and cancels the other. A failure
+   * before the duplicate was sent is returned as it is (the retry layer decides); after it, both must fail.
+   */
+  function send(url: string): Promise<unknown> {
+    const first = startSend(url);
+    if (hedgeAfterMs <= 0 || hedgeAfterMs >= timeoutMs) return first.promise;
+    return new Promise<unknown>((resolve, reject) => {
+      let hedge: Attempt | undefined;
+      let settled = false;
+      let failures = 0;
+      const succeed = (v: unknown): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        first.abort();
+        hedge?.abort();
+        resolve(v);
+      };
+      const fail = (e: unknown): void => {
+        failures += 1;
+        if (settled || (hedge && failures < 2)) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(e);
+      };
+      const timer = setTimeout(() => {
+        if (settled) return;
+        hedge = startSend(url);
+        hedge.promise.then(succeed, fail);
+      }, hedgeAfterMs);
+      first.promise.then(succeed, fail);
+    });
   }
 
   const retries = options.retry?.retries ?? DEFAULT_RETRIES;
@@ -188,13 +244,29 @@ export function createQlooClient(options: QlooClientOptions): QlooClient {
     }
   }
 
+  const inFlight = new Map<string, Promise<unknown>>();
+
+  async function fetchAndCache(url: string, pathAndQuery: string): Promise<unknown> {
+    const body = await sendWithRetry(url);
+    const stable = STABLE_PATHS.some((p) => pathAndQuery === p || pathAndQuery.startsWith(`${p}?`));
+    cache?.set(url, body, stable ? STABLE_TTL_MS : undefined);
+    return body;
+  }
+
+  /** Identical requests that are already in flight share one answer (a prefetch and the call that needs it). */
   async function get(pathAndQuery: string): Promise<unknown> {
     const url = `${baseUrl}${pathAndQuery}`;
     const hit = cache?.get(url);
     if (hit !== undefined) return hit;
-    const body = await sendWithRetry(url);
-    cache?.set(url, body);
-    return body;
+    const running = inFlight.get(url);
+    if (running) return structuredClone(await running);
+    const work = fetchAndCache(url, pathAndQuery);
+    inFlight.set(url, work);
+    try {
+      return await work;
+    } finally {
+      inFlight.delete(url);
+    }
   }
 
   return {

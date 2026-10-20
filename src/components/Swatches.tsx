@@ -4,6 +4,7 @@ import type { CSSProperties } from "react";
 import type { Swatch } from "@/ui/contract";
 import { useFeedback } from "./FeedbackContext";
 import { ItemFeedback } from "./ItemFeedback";
+import { Thin } from "./Section";
 import { WhyChip } from "./WhyChip";
 
 const INK = "#15171c";
@@ -26,9 +27,10 @@ export function inkFor(hex: string): typeof INK | typeof PAPER {
   return contrast(bg, luminance(INK)) >= contrast(bg, luminance(PAPER)) ? INK : PAPER;
 }
 
+/** The mood board: the first colour is the lead and is drawn largest; label and note sit inside the colour. */
 export function Swatches({ palette }: { palette: readonly Swatch[] }) {
   const feedback = useFeedback();
-  if (palette.length === 0) return <p className="muted">No palette could be grounded.</p>;
+  if (palette.length === 0) return <Thin>No colours could be tied to Qloo&rsquo;s decor and ambience tags for this audience, so none are shown.</Thin>;
   return (
     <ul className="swatches">
       {palette.map((s, i) => {
@@ -38,19 +40,27 @@ export function Swatches({ palette }: { palette: readonly Swatch[] }) {
             key={`${s.hex}-${s.label}`}
             className="swatch"
             style={{ "--i": i } as CSSProperties}
+            data-lead={i === 0 ? "true" : undefined}
             data-mark={state?.mark}
             data-locked={state?.locked ? "true" : undefined}
             data-changed={state?.changed ? "true" : undefined}
           >
             <div className="swatch__chip" style={{ background: s.hex, color: inkFor(s.hex) }}>
-              <span className="swatch__hex">{s.hex.toUpperCase()}</span>
+              <span className="swatch__hex">
+                {s.hex.toUpperCase()}
+                {s.role === "accent" ? " · accent" : ""}
+              </span>
+              <span className="swatch__label">{s.label}</span>
+              {s.tags && s.tags.length > 0 ? (
+                <span className="swatch__tags">From Qloo tags: {s.tags.join(", ")}</span>
+              ) : s.detail ? (
+                <span className="swatch__detail">{s.detail}</span>
+              ) : null}
             </div>
             <div className="swatch__meta">
-              <span className="swatch__label">{s.label}</span>
               <WhyChip ids={s.evidence} label={s.label} />
+              <ItemFeedback path="aesthetic.palette" item={s} />
             </div>
-            {s.detail ? <p className="swatch__detail">{s.detail}</p> : null}
-            <ItemFeedback path="aesthetic.palette" item={s} />
           </li>
         );
       })}

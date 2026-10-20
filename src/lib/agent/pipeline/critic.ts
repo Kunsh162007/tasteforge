@@ -9,7 +9,7 @@ import { signalArgsFor, type SignalKind } from "./routing";
 
 /** Stage 4: a light-model critic that may request a few allowed follow-up queries (max 2 rounds). */
 
-export const MAX_CRITIC_ROUNDS = 2;
+export const MAX_CRITIC_ROUNDS = 1;
 const MAX_FOLLOW_UPS_PER_ROUND = 3;
 /** A section with fewer returned items than this counts as thin coverage. */
 export const MIN_SECTION_ITEMS = 3;

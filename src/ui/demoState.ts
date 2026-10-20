@@ -5,6 +5,7 @@ import { sampleBrief, sampleDropped, sampleEvidence, sampleProof } from "./fixtu
 export const demoRunState: RunState = {
   ...INITIAL_RUN,
   phase: "done",
+  ended: true,
   brief: sampleBrief,
   dropped: sampleDropped,
   proof: sampleProof,

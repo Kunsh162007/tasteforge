@@ -6,6 +6,15 @@ import type { Evidence } from "./ledger";
 
 export const item = (label: string, evidence: string[]): Item => ({ label, evidence });
 
+/** A palette that passes the quality check: named colours, neutrals and one clear accent. */
+export const goodPalette = (evidence: string[], tags: string[] = ["Exposed brick"]) =>
+  [
+    { label: "Brick ember", hex: "#8B4A3B" },
+    { label: "Bone linen", hex: "#E3D3B0" },
+    { label: "Fern shadow", hex: "#3F5A4B" },
+    { label: "Lantern orange", hex: "#E0702B" },
+  ].map((c) => ({ ...c, evidence, tags }));
+
 export function makeDraft(evidence: string[], overrides: Partial<BriefDraft> = {}): BriefDraft {
   return {
     title: "Brooklyn dream-pop crowd",
@@ -90,7 +99,7 @@ export function draftFromPrompt(prompt: string): unknown {
       demographics: [{ label: "25-34 skew", evidence: [first] }],
     },
     aesthetic: {
-      palette: decor.slice(0, 2).map((t) => ({ label: t.name, evidence: [t.ev], hex: "#8B4A3B" })),
+      palette: decor.length > 0 ? goodPalette([decor[0].ev], decor.slice(0, 2).map((t) => t.name)) : [],
       lighting: [{ label: "Warm low light", evidence: [first] }],
       materials: [],
       referencePlaces: refs("MOCK-PLACE").slice(0, 4).map(asItem),

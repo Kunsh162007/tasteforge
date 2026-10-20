@@ -19,6 +19,10 @@
   .changes,
   .drawer-root,
   .colophon,
+  .brief__nav,
+  .refine-hint,
+  .item__pin,
+  .proof__shimmer,
   .item__actions .link-quiet {
     display: none !important;
   }
@@ -66,5 +70,78 @@
   }
   a {
     color: inherit;
+  }
+  @page {
+    margin: 14mm 12mm;
+  }
+  body {
+    font-size: 10.5pt;
+    line-height: 1.45;
+  }
+  .masthead {
+    border-bottom-width: 1px;
+    padding-bottom: 0.5rem;
+  }
+  .stage-area {
+    padding-top: 1rem;
+  }
+  .cover {
+    break-after: avoid;
+    gap: 1rem;
+  }
+  .cover__title {
+    font-size: 2.6rem;
+  }
+  .cover__bands {
+    height: 4.5rem;
+  }
+  .cover__band,
+  .cover__band span {
+    animation: none;
+    display: flex;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .grounding {
+    padding: 0.4rem 0.7rem;
+  }
+  .grounding__num {
+    font-size: 1.8rem;
+  }
+  .swatch__chip {
+    min-height: 6rem;
+  }
+  .swatch[data-lead="true"] .swatch__chip {
+    min-height: 6rem;
+  }
+  .swatch[data-lead="true"] {
+    grid-column: span 1;
+  }
+  .items[data-variant] .item,
+  .swatch,
+  .phrases li,
+  .check {
+    break-inside: avoid;
+  }
+  .items[data-variant="cards"] .item,
+  .items[data-variant="places"] .item {
+    box-shadow: none;
+    transform: none;
+  }
+  .playlist {
+    --pl-ink: #000;
+    --pl-mute: #444;
+    --pl-rule: #bbb;
+    --pl-hot: #1a2ab8;
+    background: #fff;
+    border: 1.5px solid #000;
+    box-shadow: none;
+    break-inside: avoid;
+  }
+  .hotmap {
+    height: 14rem;
+  }
+  .brief__colophon {
+    display: block !important;
   }
 }

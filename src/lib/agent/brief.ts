@@ -17,11 +17,14 @@ export const ItemSchema = z.object({
   qlooId: z.string().optional().describe("Qloo entity or tag id when the item is a Qloo entity."),
 });
 
+/** A palette colour: `label` is a real colour name ("Clay terracotta"); `tags` are the Qloo tags it was derived from. */
 export const SwatchSchema = ItemSchema.extend({
   hex: z
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
     .describe("Hex colour like #A1B2C3 mapped from the cited decor/ambience tags."),
+  tags: z.array(z.string().max(60)).max(4).optional().describe("Source Qloo decor or ambience tag names, verbatim."),
+  role: z.enum(["base", "accent"]).optional().describe("accent for a colour that contrasts clearly with the neutrals."),
 });
 
 const items = z.array(ItemSchema).default([]);

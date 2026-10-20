@@ -11,8 +11,11 @@
     "test:coverage": "vitest run --coverage",
     "smoke": "tsx scripts/smoke.mts",
     "eval:live": "tsx scripts/live-eval.mts",
+    "profile:live": "tsx scripts/profile-live.mts",
     "test:e2e": "playwright test",
-    "qloo:check": "tsx scripts/qloo-check.mts"
+    "qloo:check": "tsx scripts/qloo-check.mts",
+    "bench:llm": "tsx scripts/llm-bench.mts",
+    "benchmark": "tsx scripts/benchmark.mts"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

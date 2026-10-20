@@ -8,6 +8,9 @@
   --proof-mute: color-mix(in srgb, var(--paper) 62%, transparent);
   --proof-rule: color-mix(in srgb, var(--paper) 22%, transparent);
   --proof-hot: #a8b3ff;
+  --proof-ok: #7fd1a8;
+  --proof-miss: #ff9b86;
+  scroll-margin-top: 1.5rem;
 }
 @media (prefers-color-scheme: dark) {
   .proof {
@@ -270,4 +273,110 @@
 /* The columns now carry the detail: a smaller average than the checks above. */
 .proof-col__num {
   font-size: var(--step-2);
+}
+
+/* ---------- the verdict: found vs not found, and real vs invented, read at a glance ---------- */
+.proof__deck {
+  font-family: var(--font-serif);
+  font-size: var(--step-2);
+  line-height: 1.25;
+  max-width: 34ch;
+  color: var(--proof-ink);
+  letter-spacing: -0.015em;
+}
+.proof__legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  font-size: var(--step--1);
+  color: var(--proof-mute);
+}
+.proof__sub {
+  margin: 0 0 1.25rem;
+  font-family: var(--font-serif);
+  font-size: var(--step-1);
+  font-weight: 500;
+  color: var(--proof-mute);
+}
+@media (min-width: 48rem) {
+  .checks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2rem 3rem;
+  }
+  .check--minor {
+    grid-column: 1 / -1;
+  }
+}
+.check__question {
+  font-size: var(--step--1);
+  color: var(--proof-mute);
+}
+.check--lead .check__num {
+  font-size: clamp(2.4rem, 1.4rem + 3vw, 4rem);
+}
+.check--lead .check__side--forge .check__num {
+  color: var(--proof-ok);
+}
+.check--minor .check__pair {
+  gap: 0.25rem 2rem;
+}
+
+.dots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  max-width: 16.5rem;
+  margin: 0.35rem 0 0.15rem;
+}
+.dot {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  flex: none;
+}
+.dot--good {
+  background: var(--proof-ok);
+}
+.dot--bad {
+  border: 1.5px solid var(--proof-miss);
+  background: repeating-linear-gradient(135deg, var(--proof-miss) 0 2px, transparent 2px 4px);
+}
+.check__side--plain .dot--good {
+  opacity: 0.65;
+}
+
+.proof--pending {
+  display: grid;
+  gap: 1rem;
+}
+.proof__shimmer {
+  display: block;
+  height: 0.5rem;
+  background: var(--proof-rule);
+  position: relative;
+  overflow: hidden;
+}
+.proof__shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--proof-hot);
+  transform: translateX(-100%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .proof__shimmer::after {
+    animation: forge 1.6s var(--ease) infinite;
+  }
+}
+@media print {
+  .dot {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
+.check__pair {
+  align-items: flex-start;
 }

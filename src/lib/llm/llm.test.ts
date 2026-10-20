@@ -138,7 +138,7 @@ describe("config and createLlm", () => {
 
   it("loads defaults and validates", () => {
     expect(loadLlmConfig(env)).toMatchObject({ provider: "gemini", geminiModel: "gemini-2.5-flash", groqModel: "openai/gpt-oss-120b" });
-    expect(loadLlmConfig(env).chain).toHaveLength(5);
+    expect(loadLlmConfig(env).chain).toHaveLength(6);
     expect(loadLlmConfig({ GEMINI_API_KEY: "g", GEMINI_MODEL: " m " }).geminiModel).toBe("m");
     expect(() => loadLlmConfig({ LLM_PROVIDER: "openai" })).toThrow(/LLM_PROVIDER/);
     expect(() => loadLlmConfig({})).toThrow(/GEMINI_API_KEY/);
@@ -146,7 +146,7 @@ describe("config and createLlm", () => {
   });
 
   it("throws a clear error for hand-built configs with an empty chain", () => {
-    expect(() => createLlm({ geminiModel: "m", geminiLightModel: "l", groqModel: "m", provider: "gemini", chain: [] })).toThrow(/chain/);
+    expect(() => createLlm({ geminiModel: "m", geminiLightModel: "l", groqModel: "m", provider: "gemini", chain: [], fastChain: [] })).toThrow(/chain/);
   });
 
   it("counts each logical call once, whatever the retries", async () => {

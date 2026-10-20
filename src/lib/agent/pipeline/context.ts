@@ -24,9 +24,14 @@ export type SectionStat = {
   readonly failed: number;
   /** Fallback strategies the critic applied (drop_location, tags_only, ...). */
   readonly fallbacks: readonly string[];
+  /** Calls that were still running when the time budget ran out and were left out of the brief. */
+  readonly skipped?: number;
 };
 
-type StatAcc = { calls: number; usable: number; items: number; failed: number; fallbacks: string[] };
+type StatAcc = { calls: number; usable: number; items: number; failed: number; fallbacks: string[]; skipped: number };
+
+/** A Qloo call that has started and not yet reported back. */
+type PendingCall = { readonly name: string; readonly section: SectionKey | undefined; readonly startedAt: number };
 
 export type PipelineCtx = {
   readonly qloo: QlooClient;
@@ -43,6 +48,12 @@ export type PipelineCtx = {
   readonly guard: { current: Guard };
   /** Tags and dishes of the places seen so far (filled by the wrapped Qloo client). */
   readonly facts: Map<string, PlaceFacts>;
+  /** Work that may finish late without holding the brief back (trending, extra film/TV, hotspot names). */
+  readonly optional: Promise<unknown>[];
+  /** Calls started and not yet answered, by tool-call id. */
+  readonly pending: Map<string, PendingCall>;
+  /** Once closed (just before synthesis) late answers are dropped, so the ledger the brief cites stays fixed. */
+  readonly run: { closed: boolean };
 };
 
 export function createCtx(o: Pick<PipelineCtx, "qloo" | "emit" | "now" | "geocode">): PipelineCtx {
@@ -55,6 +66,9 @@ export function createCtx(o: Pick<PipelineCtx, "qloo" | "emit" | "now" | "geocod
     stats: new Map(),
     counter: { n: 0 },
     errors: [],
+    optional: [],
+    pending: new Map(),
+    run: { closed: false },
     guard: { current: createGuard({ entityIds: [], entityNames: [] }) },
   };
 }
@@ -84,13 +98,14 @@ export const itemCount = (e: Evidence): number => e.entities?.length ?? e.tags?.
 function acc(ctx: PipelineCtx, section: SectionKey): StatAcc {
   const existing = ctx.stats.get(section);
   if (existing) return existing;
-  const fresh: StatAcc = { calls: 0, usable: 0, items: 0, failed: 0, fallbacks: [] };
+  const fresh: StatAcc = { calls: 0, usable: 0, items: 0, failed: 0, fallbacks: [], skipped: 0 };
   ctx.stats.set(section, fresh);
   return fresh;
 }
 
 /** Counts a record that was empty when it arrived but has since been filled in (see walk.ts). */
 export function noteFilled(ctx: PipelineCtx, section: SectionKey, items: number): void {
+  if (ctx.run.closed) return;
   const a = acc(ctx, section);
   a.usable += 1;
   a.items += items;
@@ -106,6 +121,7 @@ export function snapshotStats(ctx: PipelineCtx): ReadonlyMap<SectionKey, Section
 
 /** Swaps one stored record for an updated copy with the same id (the ledger itself stays immutable). */
 export function replaceEvidence(ctx: PipelineCtx, updated: Evidence): void {
+  if (ctx.run.closed) return;
   ctx.box.ledger = { records: ctx.box.ledger.records.map((r) => (r.id === updated.id ? updated : r)) };
 }
 
@@ -126,36 +142,47 @@ export async function recordDraft(
 ): Promise<Evidence | undefined> {
   ctx.counter.n += 1;
   const id = `p_${ctx.counter.n}`;
+  const started = Date.now();
   ctx.emit({ type: "tool_call", id, name: call.name, args: call.args });
   const stat = section ? acc(ctx, section) : undefined;
   if (stat) stat.calls += 1;
+  ctx.pending.set(id, { name: call.name, section, startedAt: started });
   try {
     // Await first: reading the ledger before the await would let parallel calls overwrite each other.
     const draft = await produce();
+    // The run moved on (time budget): the call was already reported as left out, and the ledger is final.
+    if (ctx.run.closed) return undefined;
+    ctx.pending.delete(id);
     const { ledger, evidence } = addEvidence(ctx.box.ledger, draft);
     ctx.box.ledger = ledger;
     if (stat && isUsable(evidence)) {
       stat.usable += 1;
       stat.items += itemCount(evidence);
     }
-    ctx.emit({ type: "tool_result", id, name: call.name, ok: true, summary: evidence.summary, evidenceId: evidence.id });
+    ctx.emit({ type: "tool_result", id, name: call.name, ok: true, summary: evidence.summary, evidenceId: evidence.id, durationMs: Date.now() - started });
     return evidence;
   } catch (e) {
+    if (ctx.run.closed) return undefined;
+    ctx.pending.delete(id);
     if (stat) stat.failed += 1;
     ctx.errors.push(e);
-    ctx.emit({ type: "tool_result", id, name: call.name, ok: false, summary: failureText(e) });
+    ctx.emit({ type: "tool_result", id, name: call.name, ok: false, summary: failureText(e), durationMs: Date.now() - started });
     return undefined;
   }
 }
 
-/** Runs a registered agent tool (schema-validated args) as a recorded graph-walk step. */
+/**
+ * Runs a registered agent tool (schema-validated args) as a recorded graph-walk step. An `optional` call is also
+ * tracked in `ctx.optional`: the caller need not await it, and `closeRun` decides how long it may still take.
+ */
 export function viaTool(
   ctx: PipelineCtx,
   section: SectionKey,
   name: string,
   args: Readonly<Record<string, unknown>>,
+  opts: { readonly optional?: boolean } = {},
 ): Promise<Evidence | undefined> {
-  return recordDraft(ctx, section, { name, args }, async () => {
+  const work = recordDraft(ctx, section, { name, args }, async () => {
     const outcome = await executeTool({ name, args }, { qloo: ctx.qloo, ledger: EMPTY_LEDGER, now: ctx.now });
     if (outcome.isError || !outcome.evidence) {
       if (outcome.cause !== undefined) throw outcome.cause;
@@ -166,4 +193,46 @@ export function viaTool(
     void _discarded;
     return scrubDraft(draft, { name, args }, ctx.guard.current);
   });
+  if (opts.optional) ctx.optional.push(work);
+  return work;
+}
+
+const sleep = (ms: number): Promise<"timeout"> =>
+  new Promise((resolve) => {
+    const t = setTimeout(() => resolve("timeout"), ms);
+    t.unref?.();
+  });
+
+/**
+ * Resolves with "done" when `work` settles first, or "timeout" after `ms`. The work is left running either way.
+ * (A bare timer is fine here: it is unref'd, and the loser of the race is simply ignored.)
+ */
+export async function raceTimeout(work: Promise<unknown>, ms: number): Promise<"done" | "timeout"> {
+  if (ms <= 0) return "timeout";
+  return Promise.race([work.then(() => "done" as const, () => "done" as const), sleep(ms)]);
+}
+
+/**
+ * Ends the run's data gathering. Optional work gets up to `optionalWaitMs` more to land; after that the run is
+ * closed: calls still in flight are reported as left out (so the trail never shows a call that never ends) and any
+ * late answer is dropped. Returns how many calls were left out.
+ */
+export async function closeRun(ctx: PipelineCtx, optionalWaitMs: number): Promise<number> {
+  if (ctx.optional.length > 0) await raceTimeout(Promise.allSettled(ctx.optional), optionalWaitMs);
+  ctx.run.closed = true;
+  let skipped = 0;
+  for (const [id, call] of ctx.pending) {
+    skipped += 1;
+    if (call.section) acc(ctx, call.section).skipped += 1;
+    ctx.emit({
+      type: "tool_result",
+      id,
+      name: call.name,
+      ok: false,
+      summary: "Left out: no answer within the time budget.",
+      durationMs: Date.now() - call.startedAt,
+    });
+  }
+  ctx.pending.clear();
+  return skipped;
 }
