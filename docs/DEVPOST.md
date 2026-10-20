@@ -98,4 +98,4 @@ If the Qloo calls were removed there would be nothing to write the brief from: t
 
 ## Built with
 
-Next.js 16, React 19, TypeScript, Tailwind CSS, Zod, Leaflet with OpenStreetMap, Server-Sent Events, Vitest, Testing Library, Playwright, Qloo Taste AI API (`/search`, `/v2/tags`, `/v2/insights`, `/v2/trending`), Google Gemini 2.5 Flash with Groq (gpt-oss-120b) as fallback, Docker and Render (or Vercel).
+Next.js 16, React 19, TypeScript, Tailwind CSS, Zod, Leaflet with OpenStreetMap, Server-Sent Events, Vitest, Testing Library, Playwright, Qloo Taste AI API (`/search`, `/v2/tags`, `/v2/insights`, `/v2/trending`), a free-tier model cascade (Google Gemini 3.5 Flash-Lite, 3.5 Flash and 2.5 Flash, then Groq gpt-oss-120b and Qwen), Docker and Render.
