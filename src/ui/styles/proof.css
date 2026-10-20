@@ -1,0 +1,273 @@
+/* Taste proof: the one loud moment. Everything else on the page stays quiet around it. */
+.proof {
+  margin-top: 3rem;
+  padding: clamp(1.25rem, 4vw, 3rem);
+  background: var(--ink);
+  color: var(--paper);
+  --proof-ink: var(--paper);
+  --proof-mute: color-mix(in srgb, var(--paper) 62%, transparent);
+  --proof-rule: color-mix(in srgb, var(--paper) 22%, transparent);
+  --proof-hot: #a8b3ff;
+}
+@media (prefers-color-scheme: dark) {
+  .proof {
+    background: var(--paper-deep);
+    color: var(--ink);
+    --proof-ink: var(--ink);
+    --proof-mute: color-mix(in srgb, var(--ink) 62%, transparent);
+    --proof-rule: color-mix(in srgb, var(--ink) 22%, transparent);
+    --proof-hot: var(--accent);
+    border: 2px solid var(--ink);
+  }
+}
+.proof .muted {
+  color: var(--proof-mute);
+}
+.proof__head {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+.proof__title {
+  font-family: var(--font-serif);
+  font-size: var(--step-4);
+  font-weight: 500;
+  font-variation-settings: "opsz" 144;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+.proof__deck {
+  font-size: var(--step-1);
+  max-width: 52ch;
+  color: var(--proof-mute);
+  line-height: 1.45;
+}
+.proof__deck strong {
+  color: var(--proof-hot);
+  font-weight: 700;
+}
+.proof__cols {
+  display: grid;
+  gap: 2rem;
+}
+@media (min-width: 48rem) {
+  .proof__cols {
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+  }
+  .proof-col--plain {
+    padding-right: 2.5rem;
+    border-right: 1px solid var(--proof-rule);
+  }
+  .proof-col--forge {
+    padding-left: 2.5rem;
+  }
+}
+.proof-col__title {
+  font-size: var(--step-1);
+  font-weight: 600;
+  padding-bottom: 0.6rem;
+  border-bottom: 2px solid currentColor;
+}
+.proof-col--plain .proof-col__title {
+  color: var(--proof-mute);
+}
+.proof-col__avg {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+.proof-col__num {
+  font-family: var(--font-serif);
+  font-size: var(--step-6);
+  font-variation-settings: "opsz" 144;
+  font-variant-numeric: lining-nums;
+  line-height: 0.9;
+  letter-spacing: -0.04em;
+}
+.proof-col--plain .proof-col__num {
+  color: var(--proof-mute);
+}
+.proof-col--forge .proof-col__num {
+  color: var(--proof-hot);
+}
+.proof-col__avglabel {
+  font-size: var(--step--1);
+  color: var(--proof-mute);
+}
+.proof-col__basis {
+  margin: 0.15rem 0 0;
+  font-size: var(--step--2, 0.75rem);
+  color: var(--proof-mute);
+}
+.proof-col__num[data-na="true"] {
+  opacity: 0.55;
+  letter-spacing: 0.02em;
+}
+.proof-col__note {
+  margin: 0.75rem 0 1.5rem;
+  font-size: var(--step--1);
+  color: var(--proof-mute);
+  min-height: 2.6em;
+}
+
+.picks {
+  display: grid;
+  gap: 1rem;
+}
+.pick__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: baseline;
+}
+.pick__name {
+  font-weight: 600;
+}
+.pick__kind {
+  font-size: var(--step--1);
+  color: var(--proof-mute);
+}
+.pick__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.3rem;
+}
+.pick__track {
+  height: 0.8rem;
+  background: var(--proof-rule);
+  overflow: hidden;
+}
+.pick__bar {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform: scaleX(var(--v));
+  transform-origin: left;
+}
+.proof-col--plain .pick__bar {
+  background: var(--proof-mute);
+}
+.proof-col--forge .pick__bar {
+  background: var(--proof-hot);
+}
+.pick__track--missing {
+  background: repeating-linear-gradient(135deg, var(--proof-rule) 0 4px, transparent 4px 8px);
+  outline: 1px dashed var(--proof-mute);
+  outline-offset: -1px;
+}
+.pick__val {
+  font-variant-numeric: tabular-nums;
+  font-size: var(--step--1);
+  min-width: 2.5rem;
+  text-align: right;
+}
+.pick__val--missing {
+  font-style: italic;
+  color: var(--proof-mute);
+}
+.proof__caption {
+  margin-top: 2rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--proof-rule);
+  font-size: var(--step--1);
+  color: var(--proof-mute);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pick__bar {
+    animation: fill 0.9s var(--ease) both;
+  }
+  .proof-col--forge .pick__bar {
+    animation-delay: 0.35s;
+  }
+  @keyframes fill {
+    from {
+      transform: scaleX(0);
+    }
+  }
+}
+
+/* Lead with what a plain answer gets wrong; the affinity comparison is the quiet third check. */
+.checks {
+  display: grid;
+  gap: 1.25rem 2rem;
+  margin: 0 0 2.5rem;
+  padding: 0;
+  list-style: none;
+}
+@media (min-width: 48rem) {
+  .checks {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.check {
+  display: grid;
+  align-content: start;
+  gap: 0.5rem;
+  padding-top: 0.9rem;
+  border-top: 2px solid currentColor;
+}
+.check--minor {
+  border-top-width: 1px;
+  border-top-color: var(--proof-rule);
+}
+.check__title {
+  font-size: var(--step-0);
+  font-weight: 600;
+}
+.check__pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.5rem;
+  align-items: flex-end;
+}
+.check__side {
+  display: grid;
+  gap: 0.1rem;
+}
+.check__num {
+  white-space: nowrap;
+  font-family: var(--font-serif);
+  font-size: clamp(2rem, 1.2rem + 2.4vw, 3.2rem);
+  font-variant-numeric: lining-nums;
+  line-height: 0.95;
+  letter-spacing: -0.03em;
+}
+.check--minor .check__num {
+  font-size: var(--step-1);
+}
+.check__side--plain .check__num {
+  color: var(--proof-mute);
+}
+.check__side--forge .check__num {
+  color: var(--proof-hot);
+}
+.check__who {
+  font-size: var(--step--1);
+  color: var(--proof-mute);
+}
+.check__note {
+  font-size: var(--step--1);
+  color: var(--proof-mute);
+  max-width: 38ch;
+}
+.pick__address {
+  margin: 0.15rem 0 0;
+  font-size: var(--step--1);
+  color: var(--proof-mute);
+  overflow-wrap: anywhere;
+}
+.pick__trace {
+  margin-top: 0.4rem;
+  color: var(--proof-hot);
+  border-color: currentColor;
+  background: transparent;
+}
+/* The columns now carry the detail: a smaller average than the checks above. */
+.proof-col__num {
+  font-size: var(--step-2);
+}

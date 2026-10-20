@@ -1,0 +1,267 @@
+/* Refine loop: per-item feedback controls, the action bar, the "what changed" note and the hotspot map. */
+
+/* ---------- feedback controls ---------- */
+.fb {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+.fb__btn {
+  appearance: none;
+  font: inherit;
+  line-height: 1;
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-grid;
+  place-items: center;
+  background: transparent;
+  color: var(--ink);
+  border: 1.5px solid var(--rule);
+  border-radius: 999px;
+  cursor: pointer;
+  filter: grayscale(1);
+  opacity: 0.7;
+  transition:
+    transform 0.15s var(--ease),
+    background-color 0.15s var(--ease),
+    border-color 0.15s var(--ease),
+    opacity 0.15s var(--ease);
+}
+.fb__btn:hover {
+  opacity: 1;
+  border-color: var(--ink);
+  transform: translateY(-1px);
+}
+.fb__btn:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.fb__btn[aria-pressed="true"] {
+  filter: none;
+  opacity: 1;
+  border-color: var(--ink);
+  border-width: 2px;
+  box-shadow: 2px 2px 0 var(--ink);
+}
+.fb__btn[data-kind="like"][aria-pressed="true"] {
+  background: var(--accent-wash);
+  border-color: var(--accent);
+  box-shadow: 2px 2px 0 var(--accent);
+}
+.fb__btn[data-kind="dislike"][aria-pressed="true"] {
+  background: color-mix(in srgb, #c2410c 16%, var(--paper));
+  border-color: #c2410c;
+  box-shadow: 2px 2px 0 #c2410c;
+}
+.fb__btn[data-kind="lock"][aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* item states */
+.item[data-mark="disliked"] .item__label,
+.swatch[data-mark="disliked"] .swatch__label {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  text-decoration-color: #c2410c;
+}
+.item[data-mark="disliked"] .item__main,
+.swatch[data-mark="disliked"] .swatch__chip {
+  opacity: 0.5;
+}
+.item[data-mark="liked"] {
+  box-shadow: inset 3px 0 0 var(--accent);
+  padding-left: 0.75rem;
+}
+.item[data-locked="true"] {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.swatch[data-mark="liked"] .swatch__chip {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+.swatch[data-locked="true"] .swatch__chip {
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+}
+.swatch .fb {
+  margin-top: 0.5rem;
+}
+.item__new {
+  align-self: flex-start;
+  margin-top: 0.25rem;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* items that came in with the last refinement */
+@media (prefers-reduced-motion: no-preference) {
+  .item[data-changed="true"],
+  .swatch[data-changed="true"] {
+    animation: refine-in 0.9s var(--ease) both;
+  }
+  @keyframes refine-in {
+    0% {
+      opacity: 0;
+      transform: translateY(0.75rem);
+      background: var(--accent-wash);
+    }
+    60% {
+      opacity: 1;
+      transform: none;
+      background: var(--accent-wash);
+    }
+    100% {
+      background: transparent;
+    }
+  }
+}
+
+/* ---------- hint, action bar, what changed ---------- */
+.refine-hint {
+  margin: 0 0 1.5rem;
+  padding: 0.75rem 1rem;
+  border: 1.5px dashed var(--rule);
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+  max-width: var(--measure);
+}
+.refine-hint strong {
+  color: var(--ink);
+}
+
+.refine {
+  position: sticky;
+  bottom: 1rem;
+  z-index: 5;
+  margin-top: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  padding: 0.9rem 1.25rem;
+  background: var(--paper-raised);
+  border: 2px solid var(--ink);
+  box-shadow: 6px 6px 0 var(--accent);
+}
+.refine__count {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.refine__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+}
+.refine__note {
+  flex-basis: 100%;
+  color: var(--ink-soft);
+  font-size: var(--step--1);
+}
+.refine--busy,
+.refine--error {
+  display: grid;
+  justify-content: stretch;
+}
+.refine__title {
+  font-family: var(--font-serif);
+  font-size: var(--step-1);
+}
+.refine--error {
+  box-shadow: 6px 6px 0 #c2410c;
+}
+
+.changes {
+  display: grid;
+  gap: 0.4rem 1.5rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  margin: 0 0 2rem;
+  padding: 1rem 1.25rem;
+  background: var(--accent-wash);
+  border-left: 5px solid var(--accent);
+}
+.changes__title {
+  grid-column: 1;
+  font-family: var(--font-serif);
+  font-size: var(--step-1);
+  font-weight: 600;
+}
+.changes__text {
+  grid-column: 1;
+  max-width: var(--measure);
+}
+.changes .link-quiet {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+/* ---------- stage failure / skip ---------- */
+.stage[data-status="failed"] {
+  color: #c2410c;
+  font-weight: 600;
+}
+.stage[data-status="failed"] .stage__dot {
+  background: #c2410c;
+  border-color: #c2410c;
+  position: relative;
+}
+.stage[data-status="failed"] .stage__dot::after {
+  content: "";
+  position: absolute;
+  inset: 0.18rem;
+  background: linear-gradient(45deg, transparent 42%, #fff 42% 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 42%, #fff 42% 58%, transparent 58%);
+}
+.stage[data-status="skipped"] {
+  color: var(--ink-soft);
+  opacity: 0.6;
+}
+.stage[data-status="skipped"] .stage__dot {
+  border-style: dashed;
+}
+.stage[data-status="skipped"] .stage__label {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* ---------- hotspot map ---------- */
+.hotmap-wrap {
+  margin: 0;
+}
+.hotmap {
+  height: clamp(16rem, 40vw, 24rem);
+  width: 100%;
+  border: 2px solid var(--ink);
+  background: var(--paper-deep);
+  /* Keep Leaflet's panes below the sticky bar and the evidence drawer. */
+  position: relative;
+  z-index: 0;
+}
+.hotmap--loading {
+  background-image: repeating-linear-gradient(45deg, var(--paper-deep) 0 12px, var(--paper) 12px 24px);
+}
+.hotmap__cap {
+  margin-top: 0.5rem;
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}
+@media (prefers-color-scheme: dark) {
+  .hotmap .leaflet-tile-pane {
+    filter: invert(1) hue-rotate(180deg) brightness(0.9) contrast(0.9);
+  }
+}
+
+/* ---------- showcase retry ---------- */
+.showcase__card[data-status="queued"] .showcase__dot {
+  opacity: 0.4;
+}
+.showcase__card[data-status="failed"] .showcase__dot {
+  background: #c2410c;
+}

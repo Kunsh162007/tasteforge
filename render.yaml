@@ -1,0 +1,31 @@
+# Render Blueprint: free web service from the Dockerfile.
+# Render's proxy keeps Server-Sent Events open, so the long-running /api/brief streams work.
+# Free instances sleep after 15 minutes idle and cold-start in about 30 seconds: open the site once before a demo.
+services:
+  - type: web
+    name: tasteforge
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: QLOO_MODE
+        value: mock # switch to "live" once QLOO_API_KEY is set
+      - key: QLOO_BASE_URL
+        value: https://hackathon.api.qloo.com
+      - key: QLOO_API_KEY
+        sync: false # set in the Render dashboard
+      # Models are tried in order; one that hits a quota or outage cools down and the next answers.
+      - key: LLM_CHAIN
+        value: gemini:gemini-3.5-flash-lite,gemini:gemini-3.5-flash,gemini:gemini-2.5-flash,groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false # strongly recommended: the fallback when the Gemini free tiers run out
+      - key: LEDGER_SECRET
+        generateValue: true # signs evidence handed to the browser; keeps shared links verifiable across restarts
+      - key: MAX_CONCURRENT_BRIEFS
+        value: "4"
+      - key: DAILY_LLM_BUDGET
+        value: "600"

@@ -1,0 +1,70 @@
+@media print {
+  :root {
+    --paper: #ffffff;
+    --paper-deep: #eeeeee;
+    --paper-raised: #ffffff;
+    --ink: #000000;
+    --ink-soft: #444444;
+    --rule: #bbbbbb;
+    --accent: #1a2ab8;
+    --accent-wash: #eceefc;
+  }
+  body::before,
+  .skip,
+  .masthead__tools,
+  .why-chip,
+  .fb,
+  .refine,
+  .refine-hint,
+  .changes,
+  .drawer-root,
+  .colophon,
+  .item__actions .link-quiet {
+    display: none !important;
+  }
+  .shell {
+    max-width: none;
+    padding: 0;
+  }
+  .masthead {
+    padding-top: 0;
+  }
+  .bsection {
+    break-inside: avoid;
+    padding: 1rem 0 1.25rem;
+    grid-template-columns: 11rem 1fr;
+    gap: 1.5rem;
+  }
+  .bsection__margin {
+    position: static;
+  }
+  .swatch__chip {
+    animation: none;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .grounding {
+    transform: none;
+  }
+  .proof {
+    break-before: page;
+    background: #fff;
+    color: #000;
+    border: 2px solid #000;
+    --proof-ink: #000;
+    --proof-mute: #444;
+    --proof-rule: #bbb;
+    --proof-hot: #1a2ab8;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .dropped {
+    break-inside: avoid;
+  }
+  .dropped:not([open]) > *:not(summary) {
+    display: block;
+  }
+  a {
+    color: inherit;
+  }
+}
