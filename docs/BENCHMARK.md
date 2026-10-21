@@ -7,7 +7,7 @@ How often does a plain LLM name venues, artists and brands that Qloo cannot conf
 - **Places a plain LLM named that Qloo could not confirm in the requested city:** 56% (38 not found, 26 in another city, of 115). TasteForge: 0% of 120.
 - **Picks Qloo could not find at all (all types):** baseline 29%, TasteForge 0%.
 - **Share of place picks that are verified and local:** baseline 44%, TasteForge 100%.
-- **Repeat-run consistency** (3 prompts, 2 runs each): picks overlap 13% for the plain LLM and 17% for TasteForge.
+- **Repeat-run consistency** (3 prompts, 2 runs each): picks overlap 87% for the plain LLM and 80% for TasteForge.
 
 ## Results (20 prompts, 5 cities: Indore, London, Brooklyn, Chicago, Paris)
 
@@ -26,7 +26,21 @@ Baseline = the Taste Proof baseline: a plain LLM with no Qloo data, asked for ar
 
 ## Repeat-run consistency
 
-Three prompts, each run twice with the real synthesis step. Overlap is the Jaccard overlap of pick names (1 = identical lists). Five of the six TasteForge briefs were fully grounded and one scored 82% (the validator removed its uncited items); what changes between runs is which questions the language model asks Qloo (its seeds and concept tags) and which of the results it writes up, so the picks differ even though each one is real. Both lists are far from repeatable: the design guarantees grounding, not stability.
+Three prompts, each run twice with the real synthesis step (2026-10-21, live Qloo, the fast model chain for every call). Overlap is the Jaccard overlap of pick names (1 = identical lists). Every pick is a real Qloo result; what can still change between two runs is Qloo's own answers, which questions the model asks, and which of the ranked results the writer takes.
+
+What changed in the pipeline: the model runs at temperature 0 (the writer used 0.3); seed plans are cached per normalized prompt; the seed reply is read leniently (one reply with `"kind": "film"` used to fail the whole plan, which made the run fall back to searching the request text and produced the 0-pick briefs); Qloo results are sorted by affinity, then id; the writer is told to take entities in ranked order; and a section left under its floor (4 places, 5 artists, 3 brands) after synthesis gets one repair call, then is filled from the ledger.
+
+Two configurations were measured. **After** is the app's own (seed cache on, so the second run reuses the first run's seeds): the numbers in the table. With the seed cache off (the model alone at temperature 0, 35 calls in all) the overlaps were 86% (indore-cafe), 100% (london-studio) and 73% (brooklyn-shop), mean 86%. Both are far above 17%, but not 100%: a different seed plan or writer choice still moves a few picks, and Qloo itself is not guaranteed to answer identically. Three prompts and two runs each: indicative only. The plain-LLM baseline is a free-running call and is not meant to be repeatable; its 100% for two prompts at temperature 0 says the model answers the same way, not that it is correct.
+
+### After (2026-10-21)
+
+| Prompt | Plain LLM overlap | TasteForge overlap | TasteForge picks per run | Grounding of the two briefs |
+|---|---|---|---|---|
+| indore-cafe | 100% | 93% | 14 and 13 | 100% and 100% |
+| london-studio | 60% | 85% | 12 and 12 | 100% and 100% |
+| brooklyn-shop | 100% | 63% | 13 and 13 | 100% and 100% |
+
+### Before (2026-10-20, before the stability changes: writer temperature 0.3, no seed cache, results in Qloo's order, no minimum-content guard)
 
 | Prompt | Plain LLM overlap | TasteForge overlap | TasteForge picks per run | Grounding of the two briefs |
 |---|---|---|---|---|

@@ -154,6 +154,17 @@ The synthesis reply is also shorter (no `qlooId` UUIDs, no palette tags or evide
 
 No errors and no failed model attempts: the three syntheses were spread over three models because the first two reserved most of their minute. The time is mostly Qloo (three briefs share a client with 4 requests in flight), not the LLM. Earlier runs, before the reply cap, showed one 429 on qwen followed by a fall-through to Gemini.
 
+## Thin sections and repeatability
+
+Found 2026-10-21 (live Qloo, scripted writer): London ceramics sometimes produced a brief with 0 picks. The cause was the seed step: one model reply said `"kind": "film"` for a seed, the strict schema rejected the whole plan, and the run fell back to searching the request text as a tag. `extractSeeds` now reads the reply leniently (`coerceSeedPlan`: kind aliases, a bad seed dropped alone, long lists trimmed), asks once more when nothing usable came back, and a search hit that only shares a common word with the seed ("Studio Ghibli" matching "Taylor Swift: Folklore: The Long Pond Studio Sessions") is no match (`isPlausibleMatch`; the search is retried without the type).
+
+- **Floors** (`pipeline/minimum.ts`): 4 places, 5 artists, 3 brands, 3 palette tags (decor and ambience). After the walk and the critic, a kind below its floor gets one round of broader queries in parallel (`pipeline/widen.ts`): without the most specific tag, the venue type alone, the seed entities alone, fewer tags, the city alone. What they add is one extra evidence record (new results only, off-city and seed echoes scrubbed). Palette tags and cuisine tags are fetched from the best places when the first places query was too thin to supply them. Budget 12 s, never past the synthesis reserve, skipped when the walk was partial. The stage note says "widened places and artists".
+- **Repair** (`pipeline/repair.ts`): after validation, a section still under its floor although the ledger holds enough results gets one repair call for that section only; what the model cannot supply is filled from the ledger, best fit first. The stage note says "repaired artists".
+- **Repeatability**: temperature 0 for every call, seed plans cached per normalized prompt (`SEED_CACHE=0` turns it off), Qloo results sorted by affinity then id, and the writer told to take ranked entities in order. Measured overlap of picks between two runs: see `docs/BENCHMARK.md`.
+- **Hotspot names** come from Qloo first: the area most of the nearest top places name in their addresses (`pipeline/areaNames.ts`, "Vijay Nagar"), then reverse geocoding, then direction from the city centre.
+- **Neutrals** lean warm or cool with the tags (`colour/undertone.ts`): cosy, wood, folk, spice tags give cream and clay, minimal, industrial, electronic, coastal tags give cool whites and slate.
+- **Forcing the queue** (development): `LLM_FORCE_QUEUE_SECONDS=8` makes every fast model cool for that long before the first short call of each minute, so the "High demand" state can be seen; in production it is ignored unless `LLM_ALLOW_FORCED_QUEUE=1` is set too.
+
 ## SSE event contract
 
 `POST /api/brief`, `POST /api/brief/refine` and `POST /api/brief/compare` respond with `text/event-stream`. Each frame is `event: <type>` then `data: <json>` (the JSON repeats `type`). The stream always ends with `done`. Types are defined in `src/lib/agent/events.ts`.

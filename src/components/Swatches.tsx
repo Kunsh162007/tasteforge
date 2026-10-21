@@ -21,10 +21,19 @@ const luminance = (hex: string): number => {
 
 const contrast = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 
-/** Picks whichever of the two inks has the higher WCAG contrast ratio against the hex background. */
-export function inkFor(hex: string): typeof INK | typeof PAPER {
+const BLACK = "#000000";
+const WHITE = "#ffffff";
+const AA_TEXT = 4.5;
+
+/**
+ * Picks whichever of the two inks has the higher WCAG contrast ratio against the hex background. A mid-tone such as slate
+ * grey (#738089) reaches only 4.4:1 with either, so it gets pure black or white, which always clears AA.
+ */
+export function inkFor(hex: string): string {
   const bg = luminance(hex);
-  return contrast(bg, luminance(INK)) >= contrast(bg, luminance(PAPER)) ? INK : PAPER;
+  const [ink, ratio] = contrast(bg, luminance(INK)) >= contrast(bg, luminance(PAPER)) ? [INK, contrast(bg, luminance(INK))] : [PAPER, contrast(bg, luminance(PAPER))];
+  if (ratio >= AA_TEXT) return ink;
+  return contrast(bg, luminance(BLACK)) >= contrast(bg, luminance(WHITE)) ? BLACK : WHITE;
 }
 
 /** The mood board: the first colour is the lead and is drawn largest; label and note sit inside the colour. */

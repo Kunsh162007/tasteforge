@@ -1,7 +1,7 @@
 import type { ReverseGeocoder } from "@/lib/geo/nominatim";
 import type { QlooClient } from "@/lib/qloo";
 import type { AgentEvent, SectionKey } from "../events";
-import { addEvidence, EMPTY_LEDGER, type Evidence, type EvidenceDraft, type Ledger } from "../ledger";
+import { addEvidence, byAffinityThenId, EMPTY_LEDGER, type Evidence, type EvidenceDraft, type Ledger } from "../ledger";
 import { executeTool } from "../tools";
 import { withEntities } from "../summaries";
 import { withPlaceFacts, type PlaceFacts } from "./placeFacts";
@@ -83,8 +83,10 @@ function scrubDraft(draft: EvidenceDraft, call: { readonly name: string; readonl
   if (call.name !== "qloo_insights" || !draft.entities || draft.entities.length === 0) return draft;
   const type = String(call.args.type);
   const scrubbed = scrubEntities(draft.entities, guard, type === "place");
-  const kept = type === "movie" || type === "tv_show" ? keepAboveMedian(scrubbed.kept) : scrubbed.kept;
-  if (kept.length === draft.entities.length) return draft;
+  const media = type === "movie" || type === "tv_show";
+  // Best fit first, ties by id: the same results always become the same record, whatever order Qloo answered in.
+  const kept = [...(media ? keepAboveMedian(scrubbed.kept) : scrubbed.kept)].sort(byAffinityThenId);
+  if (kept.length === draft.entities.length && kept.every((e, i) => e.id === draft.entities?.[i].id)) return draft;
   const why = scrubbed.removedOffCity > 0 ? `Every place found was outside ${guard.city ?? "the city"}.` : "Only your own seeds came back.";
   return withEntities(draft, kept, why);
 }

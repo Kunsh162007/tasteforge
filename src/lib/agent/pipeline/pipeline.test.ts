@@ -202,7 +202,7 @@ describe("runPipeline critic", () => {
     const { result, events, llm } = await run(goodRoutes({ critic }), weakCity);
     expect(result.ok).toBe(true);
     expect(llm.calls.filter((c) => c === "critic").length).toBeGreaterThanOrEqual(1);
-    const insights = events.filter((e) => e.type === "tool_call" && e.name === "qloo_insights" && e.args.type === "place");
+    const insights = events.filter((e) => e.type === "tool_call" && e.name === "qloo_insights" && e.args.type === "place" && e.args.widened === undefined);
     expect(insights).toHaveLength(2);
     expect(insights[1].type === "tool_call" && insights[1].args.location).toBeUndefined();
     expect(result.stats?.get("aesthetic")?.fallbacks).toEqual(["drop_location"]);
@@ -235,7 +235,7 @@ describe("runPipeline critic", () => {
       ],
     };
     const noEntities = await run(goodRoutes({ critic, seeds: { seeds: [], tags: ["indie"] } }), weakCity);
-    const calls = noEntities.events.filter((e) => e.type === "tool_call" && e.name === "qloo_insights" && e.args.type === "place");
+    const calls = noEntities.events.filter((e) => e.type === "tool_call" && e.name === "qloo_insights" && e.args.type === "place" && e.args.widened === undefined);
     // first-pass place query + tags_only (entities_only has no entities to use)
     expect(calls).toHaveLength(2);
   });

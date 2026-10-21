@@ -467,8 +467,21 @@
   align-items: start;
 }
 @media (min-width: 40rem) {
+  /* The lead colour takes a 2 x 2 block; the other colours fill the grid beside it, so five colours leave no gap. */
+  .swatches {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: stretch;
+  }
+  .swatch {
+    display: flex;
+    flex-direction: column;
+  }
+  .swatch .swatch__chip {
+    flex: 1 1 auto;
+  }
   .swatch[data-lead="true"] {
     grid-column: span 2;
+    grid-row: span 2;
   }
   .swatch[data-lead="true"] .swatch__chip {
     min-height: 17rem;
@@ -499,7 +512,7 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.03em;
-  opacity: 0.85;
+  opacity: 1;
 }
 .swatch__label {
   font-family: var(--font-serif);
@@ -516,7 +529,7 @@
   font-size: var(--step--1);
   line-height: 1.3;
   font-style: italic;
-  opacity: 0.85;
+  opacity: 1;
 }
 .swatch__meta {
   display: flex;

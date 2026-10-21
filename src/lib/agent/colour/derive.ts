@@ -1,6 +1,7 @@
 import type { Cue } from "./cues";
 import { FAMILIES, familiesFor, SHARED_ACCENTS, type Family, type Role, type Tone } from "./families";
 import { distance, hash01, hexToHsl, hslToHex, type Hsl } from "./math";
+import { leanNeutral, undertoneOf } from "./undertone";
 
 /**
  * Derives a colour palette from one brief's cues. No model is involved: tags map to colour families (families.ts),
@@ -93,7 +94,7 @@ function weighFamilies(cues: readonly Cue[]): Weighted[] {
 /** `pick` rotates which of a family's tones for the role is used (the accent tries each in turn). */
 type Sampler = (family: Family, role: Role, slot: string, pick?: number) => Hsl | undefined;
 
-function makeSampler(seed: string): Sampler {
+function makeSampler(seed: string, undertone: number): Sampler {
   return (family, role, slot, pick = 0) => {
     const own = family.tones.filter((t) => t.role === role);
     // A family's own accents count three times in the draw, so its character still shows most of the time.
@@ -101,7 +102,9 @@ function makeSampler(seed: string): Sampler {
     if (options.length === 0) return undefined;
     const key = `${seed}#${family.id}#${slot}`;
     const tone: Tone = options[(Math.floor(hash01(`${key}#tone`) * options.length) + pick) % options.length];
-    return { h: lerp(tone.h, hash01(`${key}#h`)), s: lerp(tone.s, hash01(`${key}#s`)), l: lerp(tone.l, hash01(`${key}#l`)) };
+    const hsl = { h: lerp(tone.h, hash01(`${key}#h`)), s: lerp(tone.s, hash01(`${key}#s`)), l: lerp(tone.l, hash01(`${key}#l`)) };
+    // The light ground and the mid-tone take the brief's warm or cool undertone; the deep anchor and the accents keep their family's colour.
+    return role === "light" || role === "mid" ? leanNeutral(hsl, role, undertone, seed) : hsl;
   };
 }
 
@@ -149,7 +152,7 @@ export function derivePalette(cues: readonly Cue[], salt = ""): DerivedSwatch[] 
   // The Qloo ids of the tags behind the cues: the same evidence hashes the same on every run, whatever order the calls finished in
   // (ledger ids such as ev_7 depend on that order, so they stay out of the hash).
   const seed = `${[...new Set(cues.map((c) => c.tagId))].sort().join("|")}${salt}`;
-  const sample = makeSampler(seed);
+  const sample = makeSampler(seed, undertoneOf(cues));
   const [first, second = first, third = second, fourth = third] = families;
   const out: DerivedSwatch[] = [];
   const bySlot = new Map<string, DerivedSwatch>();

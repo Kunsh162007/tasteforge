@@ -49,6 +49,7 @@ export type Routes = {
   critic?: Route;
   synthesis?: Route;
   baseline?: Route;
+  repair?: Route;
 };
 
 export type RoutedLlm = LlmProvider & {
@@ -61,6 +62,7 @@ const MARKERS: readonly [keyof Routes, string][] = [
   ["critic", "critic of a taste-graph"],
   ["synthesis", "cultural briefing writer"],
   ["baseline", "no access to any data source"],
+  ["repair", "repair one section"],
 ];
 
 /** LLM stub that answers each pipeline JSON call from its own route, whatever the call order. */
@@ -107,7 +109,7 @@ export function draftFromPrompt(prompt: string): unknown {
       materials: [],
       referencePlaces: refs("MOCK-PLACE").slice(0, 4).map(asItem),
     },
-    sound: { direction: "Hazy guitars", artists: refs("MOCK-ARTIST").slice(0, 4).map(asItem) },
+    sound: { direction: "Hazy guitars", artists: refs("MOCK-ARTIST").slice(0, 5).map(asItem) },
     pairings: refs("MOCK-BRAND").slice(0, 3).map(asItem),
     messaging: { tone: "Soft, nocturnal", phrases: ["after hours"], evidence: [first] },
   };

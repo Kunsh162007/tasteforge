@@ -5,6 +5,11 @@
  * prompts twice and reports how much the picks overlap between runs.
  *
  *   npm run benchmark -- [--only=4] [--no-consistency] [--out=<scratch json>] [--write]
+ *   npm run benchmark -- --consistency-only [--no-seed-cache] [--consistency=id,id] [--show] [--write]
+ *
+ * --consistency-only skips the 20-prompt set and repeats the three consistency prompts twice with the real synthesis;
+ * with --write it replaces only the consistency section of docs/BENCHMARK.md (the earlier numbers stay as a "Before" table).
+ * Seed plans are cached per normalized prompt, like the app does; --no-seed-cache turns that off to measure the model alone.
  *
  * Needs QLOO_MODE=live and at least one LLM key (loaded from .env.local without printing values). Uses the fast
  * LLM chain throughout. In the 20-prompt set the synthesis step is replaced by the scripted writer, so
@@ -29,9 +34,10 @@ import { fetchBaselineNames } from "../src/lib/agent/proof";
 import { createLlm, createScriptedLlm, loadLlmConfig, type LlmProvider } from "../src/lib/llm";
 import { createQlooClient, loadQlooConfig, type QlooClient } from "../src/lib/qloo";
 import { ENTITY_TYPES, type EntityTypeUrn } from "../src/lib/qloo/types";
-import { renderBenchmark, type BenchRun, type Consistency } from "../src/lib/agent/benchmarkReport";
+import { patchConsistency, renderBenchmark, type BenchRun, type Consistency } from "../src/lib/agent/benchmarkReport";
 
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");
+if (process.argv.includes("--no-seed-cache")) process.env.SEED_CACHE = "0";
 
 const arg = (name: string): string | undefined => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
 const flag = (name: string): boolean => process.argv.includes(`--${name}`);
@@ -184,9 +190,30 @@ function printKind(label: string, s: Record<BenchKind, KindSummary>): void {
   for (const k of BENCH_KINDS) out(`  ${label} ${k}: n=${s[k].picks} notFound=${s[k].notFound} offCity=${s[k].offCity}/${s[k].located} fit=${s[k].meanFit?.toFixed(2) ?? "-"}`);
 }
 
+function consistencyNotes(): string {
+  const cache = process.env.SEED_CACHE === "0" ? "with the seed cache off (the model alone at temperature 0)" : "with the app's configuration (seed plans cached per normalized prompt, temperature 0, results sorted by affinity then id, the writer told to take entities in ranked order)";
+  return `Three prompts, each run twice with the real synthesis step, ${cache}. Overlap is the Jaccard overlap of pick names (1 = identical lists). Every pick is a real Qloo result; what can still change between two runs is Qloo's own answers, which questions the model asks when its seed plan is not cached, and which of the ranked results the writer takes. The plain-LLM baseline is a free-running model call and is not meant to be repeatable.`;
+}
+
+async function consistencyOnly(qloo: QlooClient): Promise<void> {
+  const cons = await consistency(PROMPTS.filter((p) => CONSISTENCY_IDS.includes(p.id)), qloo, MIN_GAP_MS);
+  const pct = (n: number | null): string => (n === null ? "n/a" : `${Math.round(n * 100)}%`);
+  for (const c of cons) out(`  ${c.id}: tasteforge overlap=${pct(c.tasteforgeOverlap)} baseline overlap=${pct(c.baselineOverlap)} picks=${c.picks.join("/")} grounding=${c.groundings.join("/")}`);
+  if (flag("write")) {
+    const path = "docs/BENCHMARK.md";
+    const date = new Date().toISOString().slice(0, 10);
+    const beforeLabel = "2026-10-20, before the stability changes: writer temperature 0.3, no seed cache, results in Qloo's order, no minimum-content guard";
+    writeFileSync(path, patchConsistency(readFileSync(path, "utf8"), cons, { date, notes: consistencyNotes(), beforeLabel }));
+  }
+  const outPath = arg("out");
+  if (outPath) writeFileSync(outPath, JSON.stringify({ consistency: cons, llmCalls }, null, 2));
+  out(`LLM calls: ${llmCalls}`);
+}
+
 async function main(): Promise<void> {
   // Patient client: the app's 15 s timeout is right for a user waiting, not for a measurement.
   const qloo = createQlooClient({ ...loadQlooConfig(), timeoutMs: QLOO_TIMEOUT_MS, hedgeAfterMs: QLOO_HEDGE_MS });
+  if (flag("consistency-only")) return consistencyOnly(qloo);
   const only = Number(arg("only") ?? PROMPTS.length);
   const defs = PROMPTS.slice(0, only);
   // --reuse=<earlier --out json> keeps its 20 runs and redoes only the consistency runs.

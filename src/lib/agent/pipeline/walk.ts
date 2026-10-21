@@ -5,7 +5,9 @@ import { isUnnamedArea, withHeatmapEntities, withTags } from "../summaries";
 import { ENTITY_TYPES, type QlooEntity } from "@/lib/qloo";
 import type { EvidenceEntity } from "../ledger";
 import { isUsable, noteFilled, raceTimeout, replaceEvidence, setGuard, viaTool, type PipelineCtx } from "./context";
+import { nameAreaFromPlaces, type NearbyPlace } from "./areaNames";
 import { scrubEntities } from "./guard";
+import { ledgerEntities } from "./minimum";
 import { baselineShares, menuTags, rankStyleTags } from "./placeFacts";
 import type { Signals } from "./resolve";
 import { signalArgsFor, venueTagIds } from "./routing";
@@ -178,14 +180,37 @@ function isSpecificName(name: string, city: string, taken: readonly { readonly n
   return !lower(name).includes(lower(city)) && !taken.some((e) => lower(e.name) === lower(name));
 }
 
-/** Replaces coordinate-only hotspot names with neighbourhood names (best effort, serial and cached). */
+/** Top reference places with a position and a street address: what hotspots are named from. */
+function placesWithAddress(ctx: PipelineCtx): NearbyPlace[] {
+  return ledgerEntities(ctx.box.ledger, "place").flatMap(({ entity }) => {
+    const address = ctx.facts.get(entity.id)?.address;
+    return address && entity.lat !== undefined && entity.lon !== undefined ? [{ id: entity.id, lat: entity.lat, lon: entity.lon, address }] : [];
+  });
+}
+
+/**
+ * Replaces coordinate-only hotspot names with neighbourhood names. Qloo's own data comes first: the area its nearest top
+ * places name in their addresses ("Vijay Nagar"). Only hotspots that leaves unnamed go to reverse geocoding (best effort,
+ * serial and cached); any still unnamed keep their placeholder and are described by direction from the city centre.
+ */
 async function nameHotspots(ctx: PipelineCtx, heat: Evidence, city: string): Promise<void> {
-  const geocode = ctx.geocode;
   const entities = heat.entities;
-  if (!geocode || !entities) return;
+  if (!entities) return;
   const named = [...entities];
   let changed = false;
+  const takenNames = (): Set<string> => new Set(named.map((e) => lower(e.name)));
+  const places = placesWithAddress(ctx);
   for (let i = 0; i < Math.min(named.length, HOTSPOTS_TO_NAME); i += 1) {
+    const e = named[i];
+    if (!isUnnamedArea(e.name) || e.lat === undefined || e.lon === undefined) continue;
+    const fromQloo = nameAreaFromPlaces({ lat: e.lat, lon: e.lon }, places, city, takenNames());
+    if (fromQloo) {
+      named[i] = { ...e, name: fromQloo };
+      changed = true;
+    }
+  }
+  const geocode = ctx.geocode;
+  for (let i = 0; geocode && i < Math.min(named.length, HOTSPOTS_TO_NAME); i += 1) {
     const e = named[i];
     if (!isUnnamedArea(e.name) || e.lat === undefined || e.lon === undefined) continue;
     const name = await geocode(e.lat, e.lon);

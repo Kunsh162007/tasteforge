@@ -16,7 +16,7 @@ function TraceChip({ pick }: { pick: ScoredPick }) {
     <button
       type="button"
       className="why-chip pick__trace"
-      aria-label={`Trace: ${pick.name}`}
+      aria-label={`trace ${pick.evidence.join(", ")}: ${pick.name}`}
       aria-haspopup="dialog"
       onClick={(e) => open(pick.evidence ?? [], pick.name, e.currentTarget)}
     >

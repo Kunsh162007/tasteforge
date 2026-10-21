@@ -12,7 +12,10 @@ import { runCritic } from "./critic";
 import { resolveFromPrompt, resolveSeeds, type Resolution, type Signals } from "./resolve";
 import { extractSeeds } from "./seeds";
 import { synthesizeBrief } from "./synthesis";
-import { dropSeedEchoes } from "./guard";
+import { dropSeedEchoes, isSeedName } from "./guard";
+import { shortfalls } from "./minimum";
+import { repairThinSections } from "./repair";
+import { widenThinSections } from "./widen";
 import { OPTIONAL_BUDGET_MS, walkGraph } from "./walk";
 
 /**
@@ -35,6 +38,8 @@ const WALK_BUDGET_SHARE = 0.45;
 const RESERVE_SHARE = 0.33;
 /** The critic's follow-up round is one fast query set: it may not run longer than this. */
 export const CRITIC_BUDGET_MS = 10_000;
+/** Broader queries for thin sections may run this long (one round of parallel Qloo calls, then the tag lookups for new places). */
+export const WIDEN_BUDGET_MS = 12_000;
 
 export type PipelineOptions = {
   readonly prompt: string;
@@ -96,7 +101,7 @@ export function withinDeadline(llm: LlmProvider, deadlineAt: number, emit?: (e: 
 /** The model that answered last, for brief metadata; scripted runs have none. */
 export const modelField = (llm: LlmProvider): { model?: string } => (llm.name === "mock" ? {} : { model: llm.name });
 
-const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
+const plural = (n: number, word: string): string => `${n} ${n === 1 ? word : word.endsWith("y") ? `${word.slice(0, -1)}ies` : `${word}s`}`;
 
 function needsInputFor(res: Resolution): NeedsInputEvent {
   const options: NeedsInputOption[] = res.ambiguities.flatMap((a) => a.options);
@@ -170,18 +175,22 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     const critic = walked.partial
       ? { detail: "skipped, out of time" }
       : await boundedCritic(ctx, { llm, signals, city, expected: expectedSections(city) }, deadlineAt);
-    stage("critic", "done", critic.detail);
+    const widened = walked.partial ? undefined : await boundedWiden(ctx, signals, city, deadlineAt);
+    stage("critic", "done", [critic.detail === "coverage looks good" && widened ? undefined : critic.detail, widened].filter(Boolean).join(", "));
     // Optional work (trending, extra TV, hotspot names) had the critic's time to land; it never delays synthesis further.
     await closeRun(ctx, optionalUntil - Date.now());
 
     stage("synthesis", "start");
     const draft = await synthesizeBrief({ llm, prompt: o.prompt, mode: o.mode, city, signals, ledger: ctx.box.ledger });
     const validated = validateBrief(draft, o.mode, ctx.box.ledger);
-    const brief = dropSeedEchoes(validated.brief, ctx.guard.current);
+    const clean = dropSeedEchoes(validated.brief, ctx.guard.current);
     const dropped = validated.dropped;
+    const isSeed = (i: { readonly label: string; readonly qlooId?: string }): boolean => (i.qlooId !== undefined && ctx.guard.current.seedIds.has(i.qlooId)) || isSeedName(ctx.guard.current, i.label);
+    const repaired = await repairThinSections({ llm, prompt: o.prompt, mode: o.mode, city, signals, ledger: ctx.box.ledger, isSeed }, clean);
+    const brief = repaired.brief;
     const stats = snapshotStats(ctx);
     const withConfidence = { ...brief, sectionConfidence: sectionConfidence(brief, stats), ...modelField(llm) };
-    stage("synthesis", "done", `grounding ${Math.round(brief.groundingScore * 100)}%`);
+    stage("synthesis", "done", `grounding ${Math.round(brief.groundingScore * 100)}%${repaired.sections.length > 0 ? `, repaired ${repaired.sections.join(" and ")}` : ""}`);
     emit({ type: "brief", brief: withConfidence, dropped, evidence: ctx.box.ledger.records, signals });
     return { ok: true, brief: withConfidence, dropped, ledger: ctx.box.ledger, signals, stats, city };
   } catch (e) {
@@ -198,6 +207,20 @@ async function boundedCritic(ctx: PipelineCtx, input: Parameters<typeof runCriti
   let outcome: Awaited<ReturnType<typeof runCritic>> | undefined;
   const settled = await raceTimeout(work.then((r) => (outcome = r)), budget);
   return settled === "done" && outcome ? outcome : { detail: "follow-up cut short, kept the first pass" };
+}
+
+/**
+ * Minimum-content guard (plan: after the walk, before synthesis): kinds of content below their floor get broader queries,
+ * within a budget that always leaves the synthesis its reserve. Never throws; whatever has not landed is left out.
+ */
+async function boundedWiden(ctx: PipelineCtx, signals: Signals, city: string | undefined, deadlineAt: number): Promise<string | undefined> {
+  const short = shortfalls(ctx.box.ledger, city);
+  if (short.length === 0) return undefined;
+  const budget = Math.min(WIDEN_BUDGET_MS, deadlineAt - SYNTHESIS_RESERVE_MS - Date.now());
+  if (budget <= 0) return undefined;
+  let note: string | undefined;
+  const settled = await raceTimeout(widenThinSections(ctx, signals, city, short).then((n) => (note = n)), budget);
+  return settled === "done" ? note : "widening cut short";
 }
 
 type StageFn = (name: StageName, status: "start" | "done", detail?: string) => void;

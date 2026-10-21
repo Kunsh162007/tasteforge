@@ -62,3 +62,52 @@ describe("walkSections thin place results", () => {
     expect(places.some((r) => (r.entities?.length ?? 0) > 0)).toBe(true);
   });
 });
+
+describe("walkSections hotspot names", () => {
+  const place = (id: string, name: string, lat: number, lon: number, address: string) => ({
+    id,
+    name,
+    type: "urn:entity:place",
+    affinity: 0.9,
+    location: { latitude: lat, longitude: lon },
+    properties: { address },
+  });
+  const places = [
+    place("P1", "Sayaji", 22.7512, 75.8895, "H/1 Maguda Nagar, Vijay Nagar, Scheme No 54 Indore, Madhya Pradesh 452010 India"),
+    place("P2", "Marriott", 22.7527, 75.8837, "H-2 Scheme No 54, Meghdoot Garden Vijay Nagar Indore, Madhya Pradesh 452010 India"),
+    place("P3", "Malhar", 22.7445, 75.8943, "299A PO, Scheme No.54 Vijay Nagar Indore, Madhya Pradesh 452010 India"),
+    place("P4", "Rajwada", 22.7184, 75.8552, "Rajwada Indore, Madhya Pradesh 452007 India"),
+  ];
+  const cells = [
+    { geohash: "tsr1", latitude: 22.751, longitude: 75.889, affinity: 0.9 },
+    { geohash: "tsr2", latitude: 22.6, longitude: 75.7, affinity: 0.7 },
+  ];
+  const withAddresses = {
+    ...qloo,
+    insights: async (p: Parameters<typeof qloo.insights>[0]) => (p.type === "urn:entity:place" ? { data: places } : qloo.insights(p)),
+    heatmap: async () => ({ data: cells }),
+  };
+
+  it("names a hotspot from the addresses of the places around it, without asking a geocoder", async () => {
+    let geocoderCalls = 0;
+    const geocode = async () => {
+      geocoderCalls += 1;
+      return "Somewhere Else";
+    };
+    const ctx = createCtx({ qloo: withAddresses, emit: () => undefined, geocode });
+    await walkSections(ctx, ["aesthetic", "where"], signals, "Indore", NO_EXCLUSIONS);
+    const heat = ctx.box.ledger.records.find((r) => r.endpoint.includes("heatmap"));
+    const names = (heat?.entities ?? []).map((e) => e.name);
+    expect(names).toContain("Vijay Nagar");
+    // the cell with no place near it falls back to the geocoder
+    expect(names).toContain("Somewhere Else");
+    expect(geocoderCalls).toBe(1);
+  });
+
+  it("keeps the placeholder for a hotspot nothing names (no geocoder in mock mode)", async () => {
+    const ctx = createCtx({ qloo: withAddresses, emit: () => undefined });
+    await walkSections(ctx, ["aesthetic", "where"], signals, "Indore", NO_EXCLUSIONS);
+    const heat = ctx.box.ledger.records.find((r) => r.endpoint.includes("heatmap"));
+    expect((heat?.entities ?? []).some((e) => e.name.startsWith("Area near"))).toBe(true);
+  });
+});

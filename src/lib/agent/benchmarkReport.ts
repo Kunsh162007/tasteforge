@@ -148,3 +148,67 @@ function perPrompt(runs: readonly BenchRun[]): string {
   });
   return lines.length === 0 ? "None." : lines.join("\n");
 }
+
+const avgOf = (rows: readonly Consistency[], f: (c: Consistency) => number | null): number | null => {
+  const v = rows.flatMap((c) => (f(c) === null ? [] : [f(c) as number]));
+  return v.length === 0 ? null : v.reduce((a, b) => a + b, 0) / v.length;
+};
+
+export function consistencyTable(rows: readonly Consistency[]): string {
+  const lines = rows.map((c) => `| ${c.id} | ${pct(c.baselineOverlap)} | ${pct(c.tasteforgeOverlap)} | ${c.picks.join(" and ")} | ${c.groundings.map((g) => pct(g)).join(" and ")} |`);
+  return [
+    "| Prompt | Plain LLM overlap | TasteForge overlap | TasteForge picks per run | Grounding of the two briefs |",
+    "|---|---|---|---|---|",
+    ...(lines.length > 0 ? lines : ["| not run | | | | |"]),
+  ].join("\n");
+}
+
+/** The first markdown table at or after `from` in `text`, as a block of lines. */
+function tableAfter(text: string, from: number): string {
+  const lines = text.slice(from).split("\n");
+  const first = lines.findIndex((l) => l.startsWith("|"));
+  if (first < 0) return "";
+  const block: string[] = [];
+  for (const l of lines.slice(first)) {
+    if (!l.startsWith("|")) break;
+    block.push(l);
+  }
+  return block.join("\n");
+}
+
+export type ConsistencyPatch = {
+  readonly date: string;
+  /** Prose under the heading: what was measured and how to read it. */
+  readonly notes: string;
+  /** Label for the numbers being replaced, e.g. "2026-10-20, before the stability changes". */
+  readonly beforeLabel: string;
+};
+
+/**
+ * Replaces the consistency section of an existing BENCHMARK.md with new measurements, keeping the numbers it replaces
+ * as a "Before" table (an earlier "Before" table is kept as it is), and updates the headline bullet.
+ */
+export function patchConsistency(md: string, rows: readonly Consistency[], p: ConsistencyPatch): string {
+  const start = md.indexOf("## Repeat-run consistency");
+  const end = md.indexOf("\n## Method");
+  if (start < 0 || end < 0) throw new Error("BENCHMARK.md has no consistency section to update");
+  const old = md.slice(start, end);
+  const beforeAt = old.indexOf("### Before");
+  const before = beforeAt >= 0 ? tableAfter(old, beforeAt) : tableAfter(old, 0);
+  const beforeHeading = beforeAt >= 0 ? (old.slice(beforeAt).split("\n")[0] ?? "### Before") : `### Before (${p.beforeLabel})`;
+  const section = `## Repeat-run consistency
+
+${p.notes}
+
+### After (${p.date})
+
+${consistencyTable(rows)}
+
+${beforeHeading}
+
+${before}
+`;
+  const headline = `- **Repeat-run consistency** (${rows.length} prompts, 2 runs each): picks overlap ${pct(avgOf(rows, (c) => c.baselineOverlap))} for the plain LLM and ${pct(avgOf(rows, (c) => c.tasteforgeOverlap))} for TasteForge.`;
+  const replaced = md.slice(0, start) + section + md.slice(end);
+  return replaced.replace(/^- \*\*Repeat-run consistency\*\*.*$/m, headline);
+}

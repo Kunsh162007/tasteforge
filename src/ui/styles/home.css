@@ -124,7 +124,15 @@ a.btn-primary {
   font-weight: 600;
 }
 .specimen__bandlabel {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+/* Five bands share a phone-width sheet: a smaller label keeps colour names such as "Eucalyptus" whole. */
+@media (max-width: 30rem) {
+  .specimen__band {
+    padding: 0.3rem 0.2rem;
+    font-size: 0.58rem;
+    letter-spacing: -0.01em;
+  }
 }
 .specimen__facts {
   display: grid;

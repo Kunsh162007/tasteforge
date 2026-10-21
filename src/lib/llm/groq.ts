@@ -38,10 +38,10 @@ export function reasoningEffortFor(model: string): string | undefined {
 }
 
 /**
- * Sampling temperature per tier: extraction and the critic should answer the same way every time (repeat runs of a
- * brief should pick the same seeds), the writer keeps a little room.
+ * Sampling temperature: 0 for every call (seeds, critic, brief). The same request should give the same picks, so repeat runs
+ * of a brief differ only where Qloo itself changes; the writer's wording stays fluent at 0.
  */
-export const TEMPERATURE = { light: 0, main: 0.3 } as const;
+export const TEMPERATURE = { light: 0, main: 0 } as const;
 
 export type GroqOptions = {
   readonly apiKey: string;

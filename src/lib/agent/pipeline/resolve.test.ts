@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createQlooClient, type QlooClient, type QlooEntity } from "@/lib/qloo";
 import { createCtx } from "./context";
-import { resolveSeeds } from "./resolve";
+import { isPlausibleMatch, judgeMatches, resolveSeeds } from "./resolve";
 
 const mock = createQlooClient({ mode: "mock", baseUrl: "https://hackathon.api.qloo.com" });
 const ctxFor = (qloo: QlooClient) => createCtx({ qloo, emit: () => undefined });
@@ -49,5 +49,37 @@ describe("resolveSeeds", () => {
     const res = await resolveSeeds(ctxFor(ambiguous), { seeds: [{ name: "Paris", kind: "other" }], tags: [] }, ["MOCK-MOVIE-1"]);
     expect(res.signals.entityIds).toEqual(["MOCK-MOVIE-1"]);
     expect(res.signals.entityNames).toEqual(["Paris"]);
+  });
+});
+
+describe("seed match plausibility", () => {
+  it("rejects a hit that only shares a common word with the seed", () => {
+    expect(isPlausibleMatch("Studio Ghibli", "Taylor Swift: Folklore: The Long Pond Studio Sessions")).toBe(false);
+  });
+
+  it("accepts the same name with different spacing, a longer official name, or a small typo", () => {
+    expect(isPlausibleMatch("radio head", "Radiohead")).toBe(true);
+    expect(isPlausibleMatch("Blue Tokai", "Blue Tokai Coffee Roasters")).toBe(true);
+    expect(isPlausibleMatch("Heath Ceramics", "Heath Ceramic")).toBe(true);
+    expect(isPlausibleMatch("Prateek Kuhad", "Prateek Kuhad")).toBe(true);
+  });
+
+  it("treats a result list with no plausible hit as no match instead of taking the top hit", () => {
+    const hits = [entity("MOCK-MOVIE-9", "Taylor Swift: Folklore: The Long Pond Studio Sessions", "urn:entity:movie")];
+    expect(judgeMatches("Studio Ghibli", true, hits, [])).toEqual({ kind: "none" });
+  });
+
+  it("searches again without the type when the typed search found nothing like the name", async () => {
+    const calls: (readonly string[] | undefined)[] = [];
+    const search: QlooClient = {
+      ...mock,
+      search: async (p) => {
+        calls.push(p.types);
+        return { data: p.types ? [entity("MOCK-MOVIE-9", "Folklore Sessions", "urn:entity:movie")] : [entity("MOCK-BRAND-1", "Muji", "urn:entity:brand")] };
+      },
+    };
+    const res = await resolveSeeds(ctxFor(search), { seeds: [{ name: "Muji", kind: "movie" }], tags: [] }, []);
+    expect(calls).toHaveLength(2);
+    expect(res.signals.entityNames).toEqual(["Muji"]);
   });
 });

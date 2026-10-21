@@ -13,6 +13,10 @@ export type EvidenceEntity = {
   readonly lat?: number;
   readonly lon?: number;
 };
+/** Affinity first (best fit first), then id: the same results always come out in the same order. */
+export const byAffinityThenId = (a: Pick<EvidenceEntity, "id" | "affinity">, b: Pick<EvidenceEntity, "id" | "affinity">): number =>
+  (b.affinity ?? -Infinity) - (a.affinity ?? -Infinity) || a.id.localeCompare(b.id);
+
 export type EvidenceTag = { readonly id: string; readonly name: string; readonly score?: number };
 
 export type Evidence = {

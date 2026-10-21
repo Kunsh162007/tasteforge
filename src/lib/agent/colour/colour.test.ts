@@ -5,7 +5,8 @@ import { finishPalette, NUDGE_MAX_DISTANCE, paletteLines } from "./apply";
 import { extractCues, type Cue } from "./cues";
 import { ACCENT_MIN_DISTANCE, ACCENT_MIN_SATURATION, derivePalette, MIN_SWATCH_DISTANCE, SUPPORT_MIN_DISTANCE } from "./derive";
 import { FAMILIES, familiesFor } from "./families";
-import { distance, hexToHsl, hash01 } from "./math";
+import { contrastRatio, distance, hexToHsl, hash01 } from "./math";
+import { undertoneOf } from "./undertone";
 import { colourName } from "./names";
 
 const cue = (name: string, evidence = "ev_6", weight = 0.8, source: Cue["source"] = "style"): Cue => ({ name, source, weight, evidence, tagId: `urn:tag:decor:qloo:${name.toLowerCase().replace(/\W+/g, "_")}` });
@@ -208,5 +209,44 @@ describe("helpers", () => {
   it("names a colour by its nearest table entry and avoids taken names", () => {
     expect(colourName("#B8654A")).toBe("Clay terracotta");
     expect(colourName("#B8654A", new Set(["clay terracotta"]))).not.toBe("Clay terracotta");
+  });
+});
+
+describe("undertone of the neutrals", () => {
+  const WARM = cues(["Cozy", "Rustic", "Wood"]).map((c, i) => ({ ...c, tagId: `${c.tagId}_w${i}` }));
+  const COOL = cues(["Minimalist", "Concrete", "Airy"]).map((c, i) => ({ ...c, tagId: `${c.tagId}_c${i}` }));
+  const NEUTRAL = cues(["Zzyzx", "Quuxish"]);
+
+  it("reads warm and cool from the tags", () => {
+    expect(undertoneOf(WARM)).toBeGreaterThan(0.5);
+    expect(undertoneOf(COOL)).toBeLessThan(-0.5);
+    expect(undertoneOf(NEUTRAL)).toBe(0);
+    expect(undertoneOf([])).toBe(0);
+  });
+
+  it("gives a cosy brief a cream ground and a minimal one a cool white, clearly apart in hue", () => {
+    const warm = hexToHsl(derivePalette(WARM)[0].hex);
+    const cool = hexToHsl(derivePalette(COOL)[0].hex);
+    expect(warm.h).toBeGreaterThan(20);
+    expect(warm.h).toBeLessThan(55);
+    expect(cool.h).toBeGreaterThan(195);
+    expect(cool.h).toBeLessThan(235);
+    expect(warm.s).toBeGreaterThan(cool.s);
+  });
+
+  it("does not let a leaning brief leave the accessible range: grounds stay light, anchors dark, accents clear", () => {
+    for (const set of [WARM, COOL, VINTAGE, MINIMAL, BOTANICAL, INDUSTRIAL]) {
+      const palette = derivePalette(set);
+      expect(hexToHsl(palette[0].hex).l, "ground").toBeGreaterThan(0.84);
+      const deep = palette.find((s) => s.hex === palette[2].hex)!;
+      expect(contrastRatio(palette[0].hex, deep.hex)).toBeGreaterThanOrEqual(4.5);
+      const accent = palette.find((s) => s.role === "accent")!;
+      expect(distance(accent.hex, palette[0].hex)).toBeGreaterThanOrEqual(ACCENT_MIN_DISTANCE);
+    }
+  });
+
+  it("makes the light grounds of briefs with different evidence differ", () => {
+    const grounds = [WARM, COOL, VINTAGE, BOTANICAL, INDUSTRIAL].map((c) => derivePalette(c)[0].hex);
+    expect(new Set(grounds).size).toBe(grounds.length);
   });
 });

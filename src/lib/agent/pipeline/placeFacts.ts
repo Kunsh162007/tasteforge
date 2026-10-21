@@ -8,7 +8,7 @@ import type { EvidenceTag } from "../ledger";
  */
 
 export type Dish = { readonly id: string; readonly name: string; readonly weight: number };
-export type PlaceFacts = { readonly tags: readonly QlooTag[]; readonly dishes: readonly Dish[] };
+export type PlaceFacts = { readonly tags: readonly QlooTag[]; readonly dishes: readonly Dish[]; /** Street address, which names the neighbourhood a hotspot lies in. */ readonly address?: string };
 
 const STYLE_FAMILIES = ["urn:tag:decor:", "urn:tag:ambience:"];
 const CUISINE_PREFIX = "urn:tag:cuisine:";
@@ -39,9 +39,14 @@ function dishesOf(e: QlooEntity): Dish[] {
   });
 }
 
+function addressOf(e: QlooEntity): { address?: string } {
+  const raw = (e.properties as { address?: unknown } | undefined)?.address;
+  return typeof raw === "string" && raw.trim() !== "" ? { address: raw.trim() } : {};
+}
+
 export function rememberPlaces(facts: Map<string, PlaceFacts>, entities: readonly QlooEntity[]): void {
   for (const e of entities) {
-    if (isPlace(e)) facts.set(e.id, { tags: e.tags ?? [], dishes: dishesOf(e) });
+    if (isPlace(e)) facts.set(e.id, { tags: e.tags ?? [], dishes: dishesOf(e), ...addressOf(e) });
   }
 }
 

@@ -58,7 +58,7 @@ describe("TasteProofPanel", () => {
         <TasteProofPanel proof={sampleProof} />
       </EvidenceProvider>,
     );
-    await user.click(screen.getByRole("button", { name: "Trace: Mitski" }));
+    await user.click(screen.getByRole("button", { name: /^trace .*: Mitski$/ }));
     opened.push([...document.querySelectorAll("[role=dialog]")].map((d) => d.textContent ?? ""));
     expect(opened[0].join(" ")).toContain("Mitski");
   });

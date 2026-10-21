@@ -33,7 +33,7 @@ What you can check:
 
 ## Evidence it works
 
-**Fabrication benchmark** (20 prompts, 5 cities, live Qloo, 2026-10-20; method and caveats in docs/BENCHMARK.md, reproduce with `npm run benchmark`): a plain LLM's place picks were missing from Qloo or in another city **56% of the time** (38 not found and 26 in another city, of 115; four runs gave 43% to 59%), and 29% of all its picks could not be found at all. TasteForge: 0% of 120, because it can only return what Qloo returned. Fit with the audience is about the same (places 0.78 baseline, 0.79 TasteForge), so the claim is verifiability, not a fit gap. Honest limits: Qloo's catalogue is not the world, so "not found" means "cannot be verified", and picks differ a lot between repeat runs for both (overlap 13% plain, 17% TasteForge).
+**Fabrication benchmark** (20 prompts, 5 cities, live Qloo, 2026-10-20; method and caveats in docs/BENCHMARK.md, reproduce with `npm run benchmark`): a plain LLM's place picks were missing from Qloo or in another city **56% of the time** (38 not found and 26 in another city, of 115; four runs gave 43% to 59%), and 29% of all its picks could not be found at all. TasteForge: 0% of 120, because it can only return what Qloo returned. Fit with the audience is about the same (places 0.78 baseline, 0.79 TasteForge), so the claim is verifiability, not a fit gap. Honest limits: Qloo's catalogue is not the world, so "not found" means "cannot be verified", and repeat runs were unstable at first (17% pick overlap); after deterministic settings and seed caching TasteForge repeats about 80% of its picks (3 prompts x 2 runs, indicative).
 
 **Why this matters (sources)**
 

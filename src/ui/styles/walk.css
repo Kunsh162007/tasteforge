@@ -88,6 +88,8 @@
   display: grid;
   grid-template-columns: auto 1fr;
   align-items: start;
+  /* rows keep their natural height: a taller neighbour must not push this stage's detail down */
+  align-content: start;
   gap: 0.15rem 0.5rem;
   padding: 0.55rem 0.5rem 0.55rem 0;
   color: var(--ink-soft);

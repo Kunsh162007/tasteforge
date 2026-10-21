@@ -6,7 +6,7 @@ import type { ShowcaseItem } from "@/ui/showcase";
 import { EvidenceProvider } from "../EvidenceContext";
 import { ShowcaseGallery } from "../ShowcaseGallery";
 import { Specimen } from "../Specimen";
-import { Swatches } from "../Swatches";
+import { inkFor, Swatches } from "../Swatches";
 import { Stages } from "../Stages";
 import { INITIAL_RUN } from "@/ui/runState";
 
@@ -56,5 +56,23 @@ describe("stage notes", () => {
     const notes = [...container.querySelectorAll(".stage__detail")].map((n) => n.getAttribute("data-note"));
     expect(notes).toEqual(["partial", "skipped"]);
     expect(container.querySelector('[data-status="failed"]')).toBeNull();
+  });
+});
+
+describe("inkFor", () => {
+  const ratio = (a: string, b: string): number => {
+    const lum = (hex: string): number => {
+      const n = parseInt(hex.slice(1), 16);
+      const lin = (c: number): number => ((c / 255) <= 0.03928 ? c / 255 / 12.92 : ((c / 255 + 0.055) / 1.055) ** 2.4);
+      return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+    };
+    const [x, y] = [lum(a), lum(b)];
+    return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
+  };
+
+  it("keeps text readable (4.5:1) on every mid-tone, using pure black or white where the house inks fall short", () => {
+    for (const hex of ["#738089", "#808080", "#777777", "#6D9D81", "#985765", "#F3F0EB", "#1C234B"]) {
+      expect(ratio(hex, inkFor(hex)), hex).toBeGreaterThanOrEqual(4.5);
+    }
   });
 });

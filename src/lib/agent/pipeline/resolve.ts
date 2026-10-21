@@ -48,6 +48,46 @@ const normalize = (s: string): string =>
     .replace(/[^a-z0-9]+/g, " ")
     .trim();
 
+const squash = (s: string): string => normalize(s).replace(/ /g, "");
+const MIN_CONTAINED = 4;
+const MIN_DICE = 0.7;
+
+function bigrams(s: string): string[] {
+  return Array.from({ length: Math.max(s.length - 1, 0) }, (_, i) => s.slice(i, i + 2));
+}
+
+/** Dice coefficient of two strings' letter pairs: 1 = same, 0 = nothing shared (tolerates typos and spacing). */
+function similarity(a: string, b: string): number {
+  const x = bigrams(a);
+  const y = bigrams(b);
+  if (x.length === 0 || y.length === 0) return a === b ? 1 : 0;
+  const left = new Map<string, number>();
+  for (const g of x) left.set(g, (left.get(g) ?? 0) + 1);
+  let shared = 0;
+  for (const g of y) {
+    const n = left.get(g) ?? 0;
+    if (n > 0) {
+      shared += 1;
+      left.set(g, n - 1);
+    }
+  }
+  return (2 * shared) / (x.length + y.length);
+}
+
+/**
+ * Whether a search hit is plausibly the thing that was asked for. verified live 2026-10-21: a movie search for "Studio
+ * Ghibli" returned only "Taylor Swift: Folklore: The Long Pond Studio Sessions", and that became a taste signal for a ceramics
+ * studio. A hit counts when one name contains the other or they are nearly the same letters; anything else is no match.
+ */
+export function isPlausibleMatch(seed: string, name: string): boolean {
+  const a = squash(seed);
+  const b = squash(name);
+  if (a === "" || b === "") return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  if (short.length >= MIN_CONTAINED && long.includes(short)) return true;
+  return similarity(a, b) >= MIN_DICE;
+}
+
 export const kindOf = (type: string): string => type.split(":").pop() || "entity";
 
 const toOption = (e: QlooEntity): NeedsInputOption => ({ label: `${e.name} (${kindOf(e.type)})`, qlooId: e.id, kind: kindOf(e.type) });
@@ -73,11 +113,13 @@ export function judgeMatches(
   if (picked) return { kind: "picked", entity: picked };
   const wanted = normalize(seed);
   const exact = results.filter((r) => normalize(r.name) === wanted);
-  const pool = exact.length > 0 ? exact : results.slice(0, 2);
+  const plausible = results.filter((r) => isPlausibleMatch(seed, r.name));
+  if (exact.length === 0 && plausible.length === 0) return { kind: "none" };
+  const pool = exact.length > 0 ? exact : plausible.slice(0, 2);
   const distinctTypes = new Set(pool.map((r) => r.type));
   const mixed = distinctTypes.size > 1 && (exact.length > 0 || !typeKnown);
   if (!mixed || autoPick) return { kind: "picked", entity: pool[0] };
-  return { kind: "ambiguous", options: results.slice(0, MAX_OPTIONS_PER_SEED).map(toOption) };
+  return { kind: "ambiguous", options: (exact.length > 0 ? exact.concat(plausible.filter((r) => !exact.includes(r))) : plausible).slice(0, MAX_OPTIONS_PER_SEED).map(toOption) };
 }
 
 async function searchOnce(ctx: PipelineCtx, query: string, kind: TypeName | undefined): Promise<readonly QlooEntity[]> {
@@ -99,7 +141,9 @@ async function resolveSeed(
 ): Promise<Outcome> {
   const kind = seed.kind === "other" ? undefined : (seed.kind as TypeName);
   let results = await searchOnce(ctx, seed.name, kind);
-  if (results.length === 0 && kind) results = await searchOnce(ctx, seed.name, undefined);
+  const hasMatch = (list: readonly QlooEntity[]): boolean => list.some((r) => isPlausibleMatch(seed.name, r.name));
+  // A typed search that found nothing like the name is tried again without the type.
+  if (!hasMatch(results) && kind) results = [...results, ...(await searchOnce(ctx, seed.name, undefined))];
   return judgeMatches(seed.name, kind !== undefined, results, chosen, autoPick);
 }
 

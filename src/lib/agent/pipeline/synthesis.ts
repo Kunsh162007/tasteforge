@@ -26,13 +26,16 @@ RULE: the LLM translates, Qloo decides. Every recommendation comes from the evid
 
 Entities carry an "id" (copy it to qlooId) and sometimes a "note" from Qloo (address, price, rating, description, hotspot direction): use notes for specific details, never contradict them or add facts they lack. Tag records list names, most distinctive first (decor and ambience apart): ignore generic words.
 
+Entity lists are ranked best fit first. For every list drawn from entities (reference places, artists, brands, affinities) take them in the order given, skipping one only when it clearly does not fit (a news site as a brand, a place that is not the venue type). Do not reshuffle or sample.
+
 Sections (use only those with evidence; leave other lists empty):
+- title: a specific headline for this audience in 5 to 10 words ("The slow-morning crowd of Indore"); never the product name or a word like "brief".
 - audienceProfile: summary (2 to 3 sentences on who they are); affinities = movies, shows and other taste signals that plausibly fit this audience, up to 6, never the seeds the user named; demographics = age and gender skew from the demographics record (Qloo reports over-indexing relative to the general population, not shares).
 - {PALETTE}
 - aesthetic.lighting and materials: concrete design choices ("Warm low pendant light", "Unglazed stoneware"); detail = the ambience tag (lighting) or decor tag (materials) it comes from; never a bare tag name as the label.
-- aesthetic.referencePlaces: up to 4 top place entities; detail = neighbourhood or street from the note, plus price level when given.
-- sound: direction (1 to 2 sentences) and up to 5 artists; mention trending direction in detail when trending evidence exists.
-- pairings: 4 to 6. First 2 or 3 brand entities that really fit the venue or product (skip news, media, unrelated brands), then 2 or 3 menu or merch ideas named after the dishes and cuisines in the tag evidence ("Bun Maska with filter coffee"). detail = one line on why. No filler.
+- aesthetic.referencePlaces: the first 4 place entities in the evidence order (more only if a place is clearly not a venue); detail = neighbourhood or street from the note, plus price level when given.
+- sound: direction (1 to 2 sentences) and 5 artists (fewer only when the evidence has fewer); mention trending direction in detail when trending evidence exists.
+- pairings: 4 to 6. First 3 brand entities that really fit the venue or product (skip news, media, unrelated brands), then 2 or 3 menu or merch ideas named after the dishes and cuisines in the tag evidence ("Bun Maska with filter coffee"). detail = one line on why. No filler.
 - whereTheyAre (only with heatmap evidence): one hotspot per heatmap entity, up to 5. label = the neighbourhood name; a name starting "Area near" is a placeholder, so label it from its note ("North-east Indore") and never add a name that is not in the evidence. detail = a few words on how strongly the audience concentrates there. Never print raw coordinates.
 - messaging: tone, 3 to 5 short phrases, and the evidence ids behind the tone.
 Keep it compact: short labels, details under 100 characters (omitted when the label says it all), at most 2 evidence ids per item.
