@@ -63,6 +63,8 @@ export type RunState = {
   changes?: BriefChanges;
   /** True once the stream has ended (or the run was loaded whole), so nothing more will arrive. */
   ended?: boolean;
+  /** Set while the server queues the run for model capacity ("high demand"); cleared by the next progress event. */
+  queue?: { waitSeconds: number };
 };
 
 const idleStages = (): RunState["stages"] =>
@@ -175,7 +177,11 @@ export function failRun(state: RunState, message: string, retryable: boolean): R
 
 /** Pure reducer: folds one stream event into run state. */
 export function reduceEvent(state: RunState, event: UiEvent): RunState {
+  // Anything but another queue notice means the wait is over.
+  if (state.queue && event.type !== "queue") return reduceEvent({ ...state, queue: undefined }, event);
   switch (event.type) {
+    case "queue":
+      return { ...state, queue: { waitSeconds: event.waitSeconds } };
     case "stage": {
       const status: StageStatus = event.status === "start" ? "active" : "done";
       const stages = { ...state.stages, [event.stage]: { status, detail: event.detail } };

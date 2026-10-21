@@ -54,14 +54,14 @@ describe("requestDraft palette repair", () => {
 
   it("asks once more when the palette is poor and uses the better reply", async () => {
     const llm = scripted([draft(BEIGES), draft(WORKING)]);
-    const result = await requestDraft(llm, "s", "p", undefined, check);
+    const result = await requestDraft(llm, "s", "p", { qualityProblem: check });
     expect(llm.calls).toBe(2);
     expect(result.aesthetic.palette[3].label).toBe("Terracotta ember");
   });
 
   it("keeps the first draft when the repair round returns unusable JSON", async () => {
     const llm = scripted([draft(BEIGES), { nonsense: true }]);
-    const result = await requestDraft(llm, "s", "p", undefined, check);
+    const result = await requestDraft(llm, "s", "p", { qualityProblem: check });
     expect(result.aesthetic.palette[0].label).toBe("Warm sand");
   });
 
@@ -74,13 +74,13 @@ describe("requestDraft palette repair", () => {
         throw new Error("rate limited");
       },
     };
-    const result = await requestDraft(llm, "s", "p", undefined, check);
+    const result = await requestDraft(llm, "s", "p", { qualityProblem: check });
     expect(result.aesthetic.palette).toHaveLength(4);
   });
 
   it("does not ask again when the first palette is fine", async () => {
     const llm = scripted([draft(WORKING)]);
-    await requestDraft(llm, "s", "p", undefined, check);
+    await requestDraft(llm, "s", "p", { qualityProblem: check });
     expect(llm.calls).toBe(1);
   });
 });

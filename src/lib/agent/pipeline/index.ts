@@ -1,5 +1,5 @@
 import type { ReverseGeocoder } from "@/lib/geo/nominatim";
-import type { LlmProvider } from "@/lib/llm";
+import type { JsonRequest, LlmProvider } from "@/lib/llm";
 import type { QlooClient } from "@/lib/qloo";
 import type { Brief, BriefMode, DroppedItem } from "../brief";
 import type { AgentEvent, NeedsInputEvent, NeedsInputOption, SectionKey, StageName } from "../events";
@@ -76,14 +76,20 @@ export type PipelineResult = RunResult & {
   readonly city?: string;
 };
 
-/** Every LLM call shares the run deadline. */
-function withinDeadline(llm: LlmProvider, deadlineAt: number): LlmProvider {
+/** Every LLM call shares the run deadline; a call that has to queue for capacity tells the stream ("high demand"). */
+export function withinDeadline(llm: LlmProvider, deadlineAt: number, emit?: (e: AgentEvent) => void): LlmProvider {
   const left = () => deadlineAt - Date.now();
+  const onWait = emit ? ({ waitMs }: { waitMs: number }) => emit({ type: "queue", waitSeconds: Math.max(1, Math.round(waitMs / 1000)) }) : undefined;
+  // The model that wrote this run's brief: the shared cascade's own "last answer" may belong to a concurrent run.
+  let writer: string | undefined;
+  const onAnswered = (req: JsonRequest) => (id: string): void => {
+    if ((req.route ?? (req.tier === "light" ? "fast" : "main")) === "main") writer = id;
+  };
   return {
     get name() {
-      return llm.name;
+      return writer ?? llm.name;
     },
-    chatJson: (req) => withDeadline(llm.chatJson(req), left()),
+    chatJson: (req) => withDeadline(llm.chatJson({ ...req, deadlineAt, onAnswered: onAnswered(req), ...(onWait ? { onWait } : {}) }), left()),
   };
 }
 
@@ -122,7 +128,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     walkedSignalled = true;
     o.onWalked?.();
   };
-  const llm = withinDeadline(o.llm, deadlineAt);
+  const llm = withinDeadline(o.llm, deadlineAt, emit);
   const ctx = createCtx({ qloo: o.qloo, emit, now: o.now, geocode: o.geocode });
   const stage = (name: StageName, status: "start" | "done", detail?: string): void =>
     emit({ type: "stage", stage: name, status, ...(detail ? { detail } : {}) });

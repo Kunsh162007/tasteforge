@@ -4,7 +4,11 @@ export async function register(): Promise<void> {
   const { validateEnv } = await import("./lib/env");
   const { errors, warnings } = validateEnv(process.env);
   for (const warning of warnings) console.warn(`[tasteforge] warning: ${warning}`);
-  if (errors.length === 0) return;
+  if (errors.length === 0) {
+    const { warmShowcaseOnBoot } = await import("./lib/http/showcaseService");
+    warmShowcaseOnBoot();
+    return;
+  }
   const report = errors.map((e) => `  - ${e}`).join("\n");
   if (process.env.NODE_ENV === "production") {
     throw new Error(`TasteForge cannot start: invalid environment.\n${report}`);

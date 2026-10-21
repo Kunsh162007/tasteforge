@@ -16,6 +16,10 @@ export type LlmConfig = {
   readonly geminiLightModel: string;
   readonly groqApiKey?: string;
   readonly groqModel: string;
+  /** Tokens per minute a Groq model may use unless `groqTokenLimits` says otherwise (free tier: 8000 per model). */
+  readonly groqTokensPerMinute: number;
+  /** Per-model overrides of the per-minute limit, by model name ("openai/gpt-oss-120b"). */
+  readonly groqTokenLimits: Readonly<Record<string, number>>;
 };
 
 export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
@@ -27,9 +31,10 @@ export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
  * 8000 tokens a minute, so a synthesis that does not fit falls through to Gemini 2.5 Flash, then to the next model.
  */
 export const DEFAULT_LLM_CHAIN_FAST =
-  "groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-20b,gemini:gemini-2.5-flash,gemini:gemini-3.5-flash-lite";
+  "groq:openai/gpt-oss-20b,groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-120b,gemini:gemini-2.5-flash,gemini:gemini-3.5-flash-lite";
 export const DEFAULT_LLM_CHAIN_MAIN =
-  "groq:openai/gpt-oss-120b,gemini:gemini-2.5-flash,groq:qwen/qwen3.8-27b,gemini:gemini-3.5-flash,gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-20b";
+  "groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,gemini:gemini-2.5-flash,gemini:gemini-3.5-flash,gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-20b";
+export const DEFAULT_GROQ_TOKENS_PER_MINUTE = 8_000;
 export const DEFAULT_LLM_CHAIN = DEFAULT_LLM_CHAIN_MAIN;
 
 type Env = Readonly<Record<string, string | undefined>>;
@@ -87,6 +92,18 @@ function resolveChain(env: Env, provider: LlmProviderName, own: string | undefin
   return [...all.filter((e) => e.provider === "groq"), ...all.filter((e) => e.provider === "gemini")];
 }
 
+/** Parses "model=tokens,model=tokens" (model names may contain slashes); malformed entries are ignored. */
+export function parseTokenLimits(spec: string | undefined): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const part of (spec ?? "").split(",")) {
+    const at = part.lastIndexOf("=");
+    const tokens = Number(part.slice(at + 1));
+    const model = part.slice(0, at).trim();
+    if (at > 0 && model && Number.isFinite(tokens) && tokens > 0) out[model] = tokens;
+  }
+  return out;
+}
+
 /** Reads LLM settings. Throws a key-free message when no model in the chain has an API key. */
 export function loadLlmConfig(env: Env = process.env): LlmConfig {
   const raw = clean(env.LLM_PROVIDER) ?? "gemini";
@@ -102,6 +119,8 @@ export function loadLlmConfig(env: Env = process.env): LlmConfig {
     geminiLightModel: clean(env.GEMINI_LIGHT_MODEL) ?? DEFAULT_GEMINI_LIGHT_MODEL,
     groqApiKey,
     groqModel: clean(env.GROQ_MODEL) ?? DEFAULT_GROQ_MODEL,
+    groqTokensPerMinute: Number(clean(env.GROQ_TOKENS_PER_MINUTE)) > 0 ? Number(env.GROQ_TOKENS_PER_MINUTE) : DEFAULT_GROQ_TOKENS_PER_MINUTE,
+    groqTokenLimits: parseTokenLimits(env.GROQ_TOKEN_LIMITS),
   } as const;
   if (raw === "mock") return { ...base, chain: [], fastChain: [] };
   if (raw === "groq" && !groqApiKey) throw new Error("GROQ_API_KEY is required when LLM_PROVIDER=groq.");

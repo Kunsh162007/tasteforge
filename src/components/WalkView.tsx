@@ -125,6 +125,11 @@ export function WalkView({ state, onChoose, onRetry, onReset }: Props) {
             {slow ? ". This one is taking longer than usual; the studio may be busy, and it is still working." : ""}
           </p>
         ) : null}
+        {running && state.queue ? (
+          <p className="walk__queue" role="status">
+            High demand: your brief is next, about {state.queue.waitSeconds} {state.queue.waitSeconds === 1 ? "second" : "seconds"}.
+          </p>
+        ) : null}
       </div>
 
       <div className="walk__log">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stageNote, trailState } from "../runState";
+import { reduceEvent, stageNote, startRun, trailState } from "../runState";
 
 describe("trailState and stageNote", () => {
   it("treats a call the server left out to stay on time as skipped, not failed", () => {
@@ -14,5 +14,21 @@ describe("trailState and stageNote", () => {
     expect(stageNote("skipped, out of time")).toBe("skipped");
     expect(stageNote("coverage looks good")).toBeUndefined();
     expect(stageNote(undefined)).toBeUndefined();
+  });
+});
+
+describe("queue notice", () => {
+  it("is shown while the server queues the run and cleared by the next progress event", () => {
+    const queued = reduceEvent(startRun(), { type: "queue", waitSeconds: 9 });
+    expect(queued.queue).toEqual({ waitSeconds: 9 });
+    expect(reduceEvent(queued, { type: "queue", waitSeconds: 5 }).queue).toEqual({ waitSeconds: 5 });
+    const resumed = reduceEvent(queued, { type: "stage", stage: "synthesis", status: "start" });
+    expect(resumed.queue).toBeUndefined();
+    expect(resumed.stages.synthesis.status).toBe("active");
+  });
+
+  it("ignores unknown event types from newer servers", () => {
+    const state = startRun();
+    expect(reduceEvent(state, { type: "something_new" } as never)).toBe(state);
   });
 });

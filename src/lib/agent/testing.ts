@@ -15,6 +15,9 @@ export const goodPalette = (evidence: string[], tags: string[] = ["Exposed brick
     { label: "Lantern orange", hex: "#E0702B" },
   ].map((c) => ({ ...c, evidence, tags }));
 
+/** What the model sends for the palette now: names only, in the order of the swatches the prompt lists. */
+export const NAMED_SWATCHES = [{ label: "Brick ember" }, { label: "Bone linen" }, { label: "Fern shadow" }, { label: "Lantern orange" }];
+
 export function makeDraft(evidence: string[], overrides: Partial<BriefDraft> = {}): BriefDraft {
   return {
     title: "Brooklyn dream-pop crowd",
@@ -78,7 +81,7 @@ export function routedLlm(routes: Routes, name = "routed"): RoutedLlm {
   };
 }
 
-function recordsFromPrompt(prompt: string): { evidence_id: string; entities?: { id: string; name: string }[]; tags?: { id: string; name: string }[] }[] {
+function recordsFromPrompt(prompt: string): { evidence_id: string; entities?: { id: string; name: string }[]; decor?: string[]; ambience?: string[]; tags?: string[] }[] {
   const line = prompt.split("\n").find((l) => l.startsWith("[{"));
   return line ? JSON.parse(line) : [];
 }
@@ -90,7 +93,7 @@ export function draftFromPrompt(prompt: string): unknown {
     records.flatMap((r) => (r.entities ?? []).filter((e) => e.id.startsWith(prefix)).map((e) => ({ ...e, ev: r.evidence_id })));
   const asItem = (e: { id: string; name: string; ev: string }) => ({ label: e.name, evidence: [e.ev], qlooId: e.id });
   const first = records[0]?.evidence_id ?? "ev_1";
-  const decor = records.flatMap((r) => (r.tags ?? []).filter((t) => t.id.includes("decor")).map((t) => ({ ...t, ev: r.evidence_id })));
+  const decor = records.flatMap((r) => (r.decor ?? []).map((name) => ({ name, ev: r.evidence_id })));
   return {
     title: "Mock brief",
     audienceProfile: {
@@ -99,7 +102,7 @@ export function draftFromPrompt(prompt: string): unknown {
       demographics: [{ label: "25-34 skew", evidence: [first] }],
     },
     aesthetic: {
-      palette: decor.length > 0 ? goodPalette([decor[0].ev], decor.slice(0, 2).map((t) => t.name)) : [],
+      palette: decor.length > 0 ? NAMED_SWATCHES : [],
       lighting: [{ label: "Warm low light", evidence: [first] }],
       materials: [],
       referencePlaces: refs("MOCK-PLACE").slice(0, 4).map(asItem),

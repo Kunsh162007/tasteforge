@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { JsonObject, LlmProvider } from "@/lib/llm";
 import type { BriefMode } from "../brief";
 import { DATA_RULE, fence } from "../fence";
-import { toToolParameters, TYPE_URNS } from "../toolSchemas";
+import { stripDescriptions, toToolParameters, TYPE_URNS } from "../toolSchemas";
 
 const MAX_SEEDS = 6;
 const MAX_TAGS = 6;
@@ -42,13 +42,12 @@ export const SeedPlanSchema = z.object({
 export type SeedPlan = z.infer<typeof SeedPlanSchema>;
 
 const SYSTEM = `You extract taste-graph seeds from a request for a cultural briefing. Reply with JSON only.
-- seeds: real named entities the user explicitly mentioned (artists, bands, brands, venues, films, shows, books). Copy names exactly. Never invent or add entities that were not mentioned. Empty when none.
-  Exception, only in find_audience mode when the user names none: add up to 4 well-known real brands, artists or films whose fans overlap strongly with the project (for hand-thrown pottery: Muji, Heath Ceramics). Only ones you are certain exist.
-- tags: 2 to 6 short concept phrases (moods, aesthetics, cuisines, lifestyle words, audience types) that describe the audience or project, in plain English such as "slow living", "young professionals" or "japanese ceramics". Do not put music genres or the venue type here.
-- musicTags: up to 3 music genres or styles the audience likes, as a record store would label them ("indie rock", "dream pop", "jazz"). When the request mentions or clearly implies music; in find_audience mode also infer 1 to 3 genres this audience would listen to; otherwise empty.
-- venue: if the request is about opening or running a physical place, its type in one or two words ("cafe", "bookstore", "ramen bar", "record shop"); otherwise omit.
+- seeds: real named entities the user explicitly mentioned (artists, bands, brands, venues, films, shows, books), copied exactly with their kind (artist, brand, place, movie, ... or other when unsure); never invent any. Only in find_audience mode when the user names none: add up to 4 well-known real brands, artists or films whose fans overlap with the project (hand-thrown pottery: Muji, Heath Ceramics), only ones you are certain exist.
+- tags: 2 to 6 short plain-English concept phrases (moods, aesthetics, cuisines, lifestyle words, audience types) such as "slow living", "young professionals", "japanese ceramics". Not music genres, not the venue type.
+- musicTags: up to 3 music genres as a record store labels them ("indie rock", "dream pop", "jazz") when the request mentions or implies music; in find_audience mode infer 1 to 3 this audience would play; otherwise empty.
+- venue: the kind of physical place being opened or run, in one or two words ("cafe", "record shop", "ramen bar"); otherwise omit.
 - city: the city named in the request, otherwise omit.
-- audienceHints: one short sentence about who this audience is.
+- audienceHints: one short sentence on who this audience is.
 ${DATA_RULE}`;
 
 const MODE_HINT: Record<BriefMode, string> = {
@@ -86,7 +85,7 @@ export async function extractSeeds(llm: LlmProvider, r: SeedRequest): Promise<Se
   const raw = await llm.chatJson({
     system: SYSTEM,
     prompt,
-    schema: toToolParameters(SeedPlanSchema) as JsonObject,
+    schema: stripDescriptions(toToolParameters(SeedPlanSchema)) as JsonObject,
     tier: "light",
   });
   const parsed = SeedPlanSchema.safeParse(stripNulls(raw));

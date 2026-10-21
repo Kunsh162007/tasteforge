@@ -1,6 +1,8 @@
 /** Rate-limit hints pulled from a 429 reply. Only derived numbers leave this module, never the body. */
 
 export type RateLimitInfo = {
+  /** The provider's explanation of the limit (numbers only, no identifiers), when its body has one. */
+  readonly detail?: string;
   readonly retryAfterMs?: number;
   /** "day" when a per-day quota is exhausted (the model stays unusable until the quota resets). */
   readonly quota: "day" | "minute";
@@ -27,10 +29,26 @@ function fromBody(body: string): number | undefined {
   return Math.round(h * 3_600_000 + min * 60_000 + s * 1000 + ms);
 }
 
+const MAX_DETAIL_CHARS = 200;
+
+/** Groq's "Limit 8000, Used 7100, Requested 5200" sentence, with organisation and model identifiers removed. */
+function detailOf(body: string): string | undefined {
+  const message = /"message"\s*:\s*"((?:[^"\\]|\\.)*)"/.exec(body)?.[1];
+  if (!message) return undefined;
+  return message
+    .replace(/\\n/g, " ")
+    .replace(/org_[A-Za-z0-9]+/g, "org")
+    .replace(/`[^`]*`/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, MAX_DETAIL_CHARS);
+}
+
 export function parseRateLimit(retryAfterHeader: string | undefined, body: string): RateLimitInfo {
   const retryAfterMs = fromHeader(retryAfterHeader) ?? fromBody(body);
   const quota = DAILY.test(body) ? "day" : "minute";
-  return retryAfterMs === undefined ? { quota } : { retryAfterMs, quota };
+  const detail = detailOf(body);
+  return { quota, ...(retryAfterMs !== undefined ? { retryAfterMs } : {}), ...(detail ? { detail } : {}) };
 }
 
 /** The next 00:00 UTC strictly after `now` (free-tier daily quotas reset then). */

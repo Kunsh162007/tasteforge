@@ -91,10 +91,13 @@ describe("refineBrief", () => {
   it("excludes disliked places and decor tags from the aesthetic walk", async () => {
     const place = brief.aesthetic.referencePlaces[0];
     const swatch = brief.aesthetic.palette[0];
-    const { result, events } = await refine({ disliked: [place.qlooId!, swatch.qlooId ?? swatch.label] });
+    const { result, events } = await refine({ disliked: [place.qlooId!, swatch.label] });
     const places = calls(events).find((e) => e.name === "qloo_insights" && e.args.type === "place");
     expect(places?.args.exclude_entity_ids).toEqual([place.qlooId]);
-    expect(places?.args.exclude_tag_ids).toEqual([swatch.qlooId]);
+    // A colour is derived from tags, so disliking it keeps those tags out of the next walk.
+    const sourceTagIds = evidence.flatMap((r) => (r.tags ?? []).filter((t) => swatch.tags?.includes(t.name)).map((t) => t.id));
+    expect(sourceTagIds.length).toBeGreaterThan(0);
+    expect([...(places?.args.exclude_tag_ids as string[])].sort()).toEqual([...new Set(sourceTagIds)].sort());
     expect(result.brief!.aesthetic.referencePlaces.map((p) => p.qlooId)).not.toContain(place.qlooId);
     expect(result.brief!.aesthetic.palette.map((p) => p.label)).not.toContain(swatch.label);
     expect(result.brief!.sound).toEqual(brief.sound);

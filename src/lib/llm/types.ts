@@ -32,7 +32,24 @@ export type JsonRequest = {
   readonly route?: JsonRoute;
   /** A shorter prompt for a provider with a small token budget (the Groq free tier allows 8000 tokens a minute). */
   readonly compactPrompt?: string;
+  /**
+   * Called when the request has to wait for capacity (every model is cooling down or out of its per-minute tokens):
+   * the pipeline turns it into a "high demand" notice. Never part of the response cache key.
+   */
+  readonly onWait?: (info: { readonly waitMs: number }) => void;
+  /** Epoch ms after which the caller gives up; the cascade does not queue past it. */
+  readonly deadlineAt?: number;
+  /** Told which model ("groq:openai/gpt-oss-120b") answered this very request, whatever other requests ran meanwhile. */
+  readonly onAnswered?: (modelId: string) => void;
 };
+
+/**
+ * Most tokens a reply may use, per call route. Groq checks "prompt plus the reply you allow" against a model's
+ * per-minute budget before it answers, so an explicit cap keeps a brief within it (verified live 2026-10-21: a
+ * 4k-token synthesis prompt with no cap was refused with HTTP 429 while the bucket was nearly full; the reply itself is
+ * 1.5k to 2.2k tokens). The cascade reserves budget for the same amount.
+ */
+export const REPLY_TOKEN_CAP = { main: 3_000, fast: 800 } as const;
 
 export type LlmProvider = {
   readonly name: string;
@@ -51,13 +68,15 @@ export class LlmError extends Error {
   readonly retryAfterMs?: number;
   /** For rate limits: whether a per-day quota is exhausted. */
   readonly quota?: "day" | "minute";
+  /** For rate limits: the provider's own explanation with identifiers removed ("Limit 8000, Used 7100, Requested 5200"), for server logs. */
+  readonly detail?: string;
 
   constructor(
     provider: string,
     kind: LlmErrorKind,
     message: string,
     status?: number,
-    hints: { readonly retryAfterMs?: number; readonly quota?: "day" | "minute" } = {},
+    hints: { readonly retryAfterMs?: number; readonly quota?: "day" | "minute"; readonly detail?: string } = {},
   ) {
     super(message);
     this.name = "LlmError";
@@ -66,6 +85,7 @@ export class LlmError extends Error {
     this.status = status;
     this.retryAfterMs = hints.retryAfterMs;
     this.quota = hints.quota;
+    this.detail = hints.detail;
   }
 
   get retryable(): boolean {

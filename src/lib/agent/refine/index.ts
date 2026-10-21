@@ -3,12 +3,12 @@ import type { LlmProvider } from "@/lib/llm";
 import type { QlooClient } from "@/lib/qloo";
 import type { Brief } from "../brief";
 import type { AgentEvent, BriefSignals, SectionConfidence, SectionKey, StageName } from "../events";
-import { describeFailure, withDeadline, type Failure } from "../failure";
+import { describeFailure, type Failure } from "../failure";
 import { beginBaseline, finishProof, type GenerateResult } from "../generate";
 import type { Ledger } from "../ledger";
 import { sectionConfidence } from "../pipeline/confidence";
 import { createCtx, snapshotStats, type PipelineCtx } from "../pipeline/context";
-import { modelField, PIPELINE_TIMEOUT_MS } from "../pipeline";
+import { modelField, PIPELINE_TIMEOUT_MS, withinDeadline } from "../pipeline";
 import { resolveFromPrompt, resolveSeeds, type Signals } from "../pipeline/resolve";
 import { extractSeeds } from "../pipeline/seeds";
 import { walkSections } from "../pipeline/walk";
@@ -94,12 +94,7 @@ type Run = {
 function startRun(o: RefineOptions): Run {
   const emit = (e: AgentEvent): void => o.onEvent?.(e);
   const deadlineAt = Date.now() + (o.timeoutMs ?? PIPELINE_TIMEOUT_MS);
-  const llm: LlmProvider = {
-    get name() {
-      return o.llm.name;
-    },
-    chatJson: (req) => withDeadline(o.llm.chatJson(req), deadlineAt - Date.now()),
-  };
+  const llm = withinDeadline(o.llm, deadlineAt, emit);
   const ctx = createCtx({ qloo: o.qloo, emit, geocode: o.geocode });
   ctx.box.ledger = { records: o.request.evidence };
   const stage: Run["stage"] = (name, status, detail) => emit({ type: "stage", stage: name, status, ...(detail ? { detail } : {}) });

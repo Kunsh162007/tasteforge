@@ -19,7 +19,7 @@ You describe a project and, optionally, a city. TasteForge returns a brief with 
 | Section | Contents |
 |---|---|
 | The audience | Affinities (films, shows, other taste signals) and age/gender skew |
-| The look | A 4 to 5 colour palette with real colour names ("Clay terracotta"), neutrals plus a clear accent, each captioned with the Qloo decor or ambience tags it came from; lighting, materials and reference places, all derived from tags of places the audience likes |
+| The look | A 4 to 5 colour palette: neutrals plus a clear accent, derived in code from the decor, ambience, genre and cuisine tags of that brief's own evidence (a documented tag-to-colour mapping, weighted by tag score and by how specific the tag is to the top places against the city baseline), named by the model ("Clay terracotta") and captioned with the Qloo tags each colour came from; lighting, materials and reference places, all derived from tags of places the audience likes |
 | The sound | Artists the audience over-indexes on, with trending direction |
 | Pairings | Brands, plus menu or merch ideas inferred from cuisine tags |
 | Where they are | Neighbourhood hotspots for the audience in your city, on a map (needs a city) |
@@ -33,7 +33,7 @@ What makes it different from a chat answer:
 - **Grounding score.** A server-computed percentage of submitted items that cite real evidence. Ungrounded items are removed and listed, not shown.
 - **Taste Proof.** Qloo itself scores a plain LLM's picks and TasteForge's picks against the same audience. See below.
 - **Refine loop.** Like, dislike or lock any item. Only the sections you touched are re-walked, with disliked entities excluded and liked ones added as signals.
-- **Showcase briefs.** Three example briefs are pre-generated on the server so the first visit is instant even when free LLM tiers are throttled.
+- **Showcase briefs.** Six example briefs (Indore, London, New York, Brooklyn, Chicago, Paris; cafe, ceramics, pop-ups, boutique, record-store bar) are built on the server one at a time right after it boots, so the first visit is instant even when free LLM tiers are throttled. `npm run warm` waits until they are all ready.
 - **Two-city comparison.** Re-runs the same audience for a second city, reusing the first run's resolved seeds, and shows what differs. It has no Taste Proof, and usually costs a single LLM call (no seed extraction, no baseline).
 - **Shareable `/b#...` links.** The brief and the evidence it cites travel in the URL fragment (never sent to a server). The server signs the evidence it issues, and a shared page asks `POST /api/verify` to check it, then shows a "Shared link, verified" or "unverified" banner, so an edited link cannot pass for Qloo data.
 - Print / save as PDF from the brief view.
@@ -145,8 +145,9 @@ Details, the event contract and the module map are in [docs/ARCHITECTURE.md](doc
 | `QLOO_MODE` | `mock` | `mock` (synthetic fixtures, no key) or `live` |
 | `QLOO_API_KEY` | none | Qloo hackathon key; required when `QLOO_MODE=live` |
 | `QLOO_BASE_URL` | `https://hackathon.api.qloo.com` | Qloo API base URL |
-| `LLM_CHAIN_FAST` | `groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-20b,gemini:gemini-2.5-flash,gemini:gemini-3.5-flash-lite` | Ordered `provider:model` list for the short calls: seeds, critic and the Taste Proof baseline. A model that answers 429, quota exhausted or 503 cools down (daily quotas until 00:00 UTC, others for the server's retry-after) and the next one answers, so several small free tiers add up. Models whose provider has no key are skipped. Measured: Groq answers these in 0.4 to 1 s, Gemini's free tier in 9 to 21 s. |
-| `LLM_CHAIN_MAIN` | `groq:openai/gpt-oss-120b,gemini:gemini-2.5-flash,groq:qwen/qwen3.8-27b,gemini:gemini-3.5-flash,gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-20b` | The same for the brief synthesis (about 5 s on Groq, 13 to 16 s on Gemini). The model that wrote a brief is shown in its header. |
+| `LLM_CHAIN_FAST` | `groq:openai/gpt-oss-20b,groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-120b,gemini:gemini-2.5-flash,gemini:gemini-3.5-flash-lite` | Ordered `provider:model` list for the short calls: seeds, critic and the Taste Proof baseline. Every Groq model has its own per-minute token limit, so these start on the small models and leave gpt-oss-120b to the synthesis. A model that answers 429, quota exhausted or 503 cools down (daily quotas until 00:00 UTC, others for the server's retry-after) and the next one answers, so several small free tiers add up. Models whose provider has no key are skipped. Measured: Groq answers these in 0.4 to 1 s, Gemini's free tier in 9 to 21 s. |
+| `LLM_CHAIN_MAIN` | `groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,gemini:gemini-2.5-flash,gemini:gemini-3.5-flash,gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-20b` | The same for the brief synthesis (about 5 s on Groq, 13 to 16 s on Gemini). The model that wrote a brief is shown in its header. |
+| `GROQ_TOKENS_PER_MINUTE`, `GROQ_TOKEN_LIMITS` | `8000`, unset | Per-model per-minute token limit the app plans with (Groq's `x-ratelimit-limit-tokens` header overrides it at run time) and optional overrides such as `qwen/qwen3.8-27b=6000`. A model without room for a request is passed over before it is called. |
 | `LLM_CHAIN` | unset | Older single setting: used for any call type whose own chain above is unset. |
 | `GEMINI_API_KEY` | none | Google AI Studio key for `gemini:` entries |
 | `GROQ_API_KEY` | none | Groq key for `groq:` entries (strongly recommended: the first model in both default chains) |
@@ -154,6 +155,7 @@ Details, the event contract and the module map are in [docs/ARCHITECTURE.md](doc
 | `GEMINI_MODEL`, `GROQ_MODEL` | unset | Legacy: when no chain variable is set the model is added to the front of its own provider's group in the default chains |
 | `LEDGER_SECRET` | random per process | Key for the HMAC that signs the evidence handed to the browser (refine, compare, shared links). Use a long random value (16+ characters, e.g. `openssl rand -base64 32`). Without it a random secret is generated at startup and a warning is logged; shared links then stop verifying after each restart. `render.yaml` generates one for you. |
 | `MAX_CONCURRENT_BRIEFS` | `4` | Briefs, refinements and comparisons that may run at once, server-wide. Beyond it visitors get a friendly, retryable "demo is busy" message. |
+| `SHOWCASE_WARM_ON_BOOT` | `1` | In production on live data, build the six showcase briefs right after boot. `0` turns it off. |
 | `DAILY_LLM_BUDGET` | `600` | LLM calls per UTC day, server-wide. Once spent, new runs get a "try again tomorrow" message instead of hammering the free tier. |
 
 Keys are read from the environment only. `.env*` is git-ignored except `.env.example`.
@@ -169,8 +171,20 @@ Keys are read from the environment only. `.env*` is git-ignored except `.env.exa
 | `npm run test:e2e` | Playwright end-to-end flow (submit, brief, evidence drawer, Taste Proof, map, refine) |
 | `npm run smoke` | Real LLM from your env plus mock Qloo; prints stages, LLM call count, duration, grounding and proof averages |
 | `npm run benchmark` | Fabrication benchmark: 20 prompts across 5 cities, plain LLM against TasteForge, checked against live Qloo; writes `docs/BENCHMARK.md`. Needs `QLOO_MODE=live` and an LLM key. |
+| `npm run warm` | Waits until the deployed showcase (default https://tasteforge-fa98.onrender.com, or `-- --url=...`) has all six briefs ready; also wakes a sleeping Render instance. See the judging-day checklist. |
+| `npm run loadtest -- --url=http://localhost:3000 --n=4` | Fires N concurrent briefs at a running server and prints time to brief, total time, the model that wrote each brief, "high demand" waits and errors. Uses real LLM and Qloo calls on the server. |
+| `npm run prompt:size` | Tokens each LLM call type would send (live Qloo, scripted LLM, no LLM quota). |
 | `npm run bench:llm` | Replays captured LLM requests against chosen models (latency, JSON validity, grounding); see `docs/ARCHITECTURE.md`, "Speed pass". |
 | `npm run qloo:check -- --live` | Probes each Qloo endpoint and parameter and prints PASS/WARN/FAIL. Needs `-- --live` and `QLOO_API_KEY` to test real data; without `--live` it runs against the mock fixtures and proves nothing about the live API. |
+
+## Judging-day checklist
+
+1. In the Render dashboard confirm the keys (`QLOO_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`, `LEDGER_SECRET`) and that `LLM_CHAIN_FAST` / `LLM_CHAIN_MAIN` match `render.yaml` (a value set in the dashboard wins over the blueprint).
+2. About 20 minutes before judging run `npm run warm`. It wakes the free instance (about 30 s) and waits until all six showcase briefs are ready (about 5 minutes on live data). It exits 0 when they are; run it again if it times out, the server keeps building.
+3. Open the site once and open two or three showcase briefs: each should show its own palette, its Why chips and a Taste Proof.
+4. Build one live brief of your own to check the whole path, then leave the instance alone: a Render free instance sleeps after 15 minutes without traffic and forgets its showcase cache when it does. Run `npm run warm` again if it slept.
+5. Check `GET /api/health` returns 200 with `"problems":[]`.
+6. If the LLM free tiers are spent (`/api/health` stays ok but briefs say "busy"), the showcase briefs still open instantly. The Render log shows every model switch (`llm groq:... -> gemini:...: rate_limit HTTP 429`).
 
 ## Deploy
 
@@ -196,7 +210,7 @@ The showcase cache and rate limiter are per server instance (in memory, with a g
 - **Affinity measures fit with taste signals.** Taste Proof shows that picks are real, local and at least as close to the audience's Qloo signals as an ungrounded LLM list (the fit gap is modest on live data). It does not measure sales, quality or novelty.
 - **Result hygiene.** In code, before the writer sees Qloo results: the user's own seeds are removed (by id and normalized name), places more than 50 km from the city's result cluster are dropped (with a same-city widening query if that leaves too few), film and TV picks below the batch median affinity are omitted, and style tags are ranked by how specific they are to the top places versus the city's ordinary places.
 - **Coverage varies by city.** Places, decor/ambience tags and heatmaps depend on Qloo's coverage. Thin sections get a lower confidence label and the critic tries fallbacks (drop the city, tags only).
-- **Free-tier LLM limits.** Gemini and Groq free tiers are rate-limited (Groq: 8000 tokens a minute per model, so two briefs within the same minute spill onto the next model in the chain). The app walks the `LLM_CHAIN_FAST` / `LLM_CHAIN_MAIN` cascades (see above), cooling down any model that hits its quota or an outage, and paces showcase generation. Under heavy load you may see a "busy, retrying" state.
+- **Free-tier LLM limits.** Gemini and Groq free tiers are rate-limited (Groq: 8000 tokens a minute per model; one brief uses about 4,300 input tokens plus replies, so about 1.5 briefs a minute fit on gpt-oss-120b). The app counts each model's tokens per minute, passes over a model that is nearly spent, cools down any model that hits its quota or an outage, and paces showcase generation. When nothing has room it queues the brief for up to 25 s and shows "High demand: your brief is next, about N seconds". Local load test, 3 briefs at once: all answered in 28 to 41 s, written by gpt-oss-120b, qwen3.8-27b and Gemini 2.5 Flash with no failed attempts.
 - **Demo capacity.** A server-wide cap on concurrent runs and a daily LLM budget protect the free tiers; when either is hit the app says it is busy and to retry. Limits and caches are per server instance.
 - **Pipeline deadline.** A brief has a 90 second budget, and the Qloo walk stops waiting after 28 s: calls still running are shown as skipped ("Left out") and the brief is written from what arrived, with lower section confidence (live Qloo calls take 1 to 10 s each with a long tail). Only a wholly unusable run ends in a friendly retryable error.
 - Parameter spellings that could not be confirmed offline are marked `VERIFY with live key` in `src/lib/qloo/` and are checked by `qloo:check`.

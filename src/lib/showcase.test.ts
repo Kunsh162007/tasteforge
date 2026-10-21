@@ -24,8 +24,12 @@ const okResult = (): GenerateResult => ({
 });
 
 describe("showcase definitions", () => {
-  it("has the three required prompts", () => {
-    expect(SHOWCASES.map((s) => s.id)).toEqual(["cafe-indore", "ceramic-artist", "couple-night-out"]);
+  it("has the six prompts, in six different cities with varied project types", () => {
+    expect(SHOWCASES.map((s) => s.id)).toEqual(["cafe-indore", "ceramic-artist", "couple-night-out", "boutique-brooklyn", "record-bar-chicago", "popup-paris"]);
+    expect(new Set(SHOWCASES.map((s) => s.city)).size).toBe(SHOWCASES.length);
+    expect(new Set(SHOWCASES.map((s) => s.id)).size).toBe(SHOWCASES.length);
+    expect(SHOWCASES.map((s) => s.city)).toEqual(expect.arrayContaining(["Brooklyn", "Chicago", "Paris"]));
+    expect(SHOWCASES.some((s) => s.mode === "find_audience" && s.city === "Brooklyn")).toBe(true);
     expect(SHOWCASES[0]).toMatchObject({ city: "Indore", mode: "know_audience" });
     expect(SHOWCASES[1].mode).toBe("find_audience");
     expect(SHOWCASES[2].prompt).toMatch(/A24.*Radiohead.*Vietnamese/);
@@ -59,6 +63,15 @@ describe("showcase service", () => {
     expect(restarted.list().every((e) => e.status === "ready")).toBe(true);
     await restarted.ensure();
     expect(again).not.toHaveBeenCalled();
+  });
+
+  it("does not serve disk results made from another data source (mock results never pass for live ones)", async () => {
+    const dir = tmp();
+    await createShowcaseService({ defs, generate: async () => okResult(), dir, source: "mock|mock", ...noWait }).ensure();
+    const live = createShowcaseService({ defs, generate: async () => okResult(), dir, source: "live|llm", ...noWait });
+    expect(live.list().map((e) => e.status)).toEqual(["queued", "queued"]);
+    const sameSource = createShowcaseService({ defs, generate: vi.fn(), dir, source: "mock|mock", ...noWait });
+    expect(sameSource.list().every((e) => e.status === "ready")).toBe(true);
   });
 
   it("shares one run between concurrent ensure() calls and generates one at a time", async () => {

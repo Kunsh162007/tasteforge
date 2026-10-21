@@ -56,6 +56,13 @@
   font-size: var(--step-1);
   line-height: 1.3;
 }
+.walk__queue {
+  padding: 0.5rem 0.75rem;
+  border-left: 3px solid var(--accent);
+  background: var(--paper-deep);
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}
 .walk__step {
   font-family: var(--font-sans);
   font-size: var(--step--1);

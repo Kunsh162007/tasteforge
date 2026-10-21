@@ -23,7 +23,7 @@ const MODE_LABEL: Record<ShowcaseItem["mode"], string> = {
   find_audience: "Audience found for you",
 };
 
-const SKELETONS = [0, 1, 2];
+const SKELETONS = [0, 1, 2, 3, 4, 5];
 
 /** Ticks once a second while a retry countdown is showing. */
 function useNow(active: boolean): number {

@@ -93,4 +93,15 @@ export function toToolParameters(schema: z.ZodType): JsonObject {
   return sanitizeSchema(z.toJSONSchema(schema, { io: "input" })) as JsonObject;
 }
 
+/** A JSON schema without its `description` texts, for prompts whose system message already explains every field. */
+export function stripDescriptions(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(stripDescriptions);
+  if (!node || typeof node !== "object") return node;
+  return Object.fromEntries(
+    Object.entries(node)
+      .filter(([k, v]) => !(k === "description" && typeof v === "string"))
+      .map(([k, v]) => [k, stripDescriptions(v)]),
+  );
+}
+
 export const SubmitBriefArgs = BriefDraftSchema;

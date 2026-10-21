@@ -11,7 +11,8 @@ type Rec = {
   readonly evidence_id: string;
   readonly summary?: string;
   readonly entities?: readonly { id: string; name: string }[];
-  readonly tags?: readonly { id: string; name: string }[];
+  readonly decor?: readonly string[];
+  readonly ambience?: readonly string[];
 };
 type Item = { label: string; detail?: string; evidence: string[]; qlooId?: string };
 
@@ -19,7 +20,6 @@ const KNOWN_SEEDS: readonly { name: string; kind: string }[] = [
   { name: "Radiohead", kind: "artist" },
   { name: "A24", kind: "brand" },
 ];
-const SWATCH_HEX = ["#8A6F4D", "#3F5A4B", "#E3D3B0", "#6B4F4F", "#C4492B", "#B8785A"] as const;
 const SWATCH_NAMES = ["Walnut brown", "Moss green", "Brass gold", "Oxblood", "Ink navy", "Clay terracotta"] as const;
 const MAX_ITEMS = 6;
 
@@ -57,26 +57,23 @@ function entityItems(records: readonly Rec[], kinds: readonly string[], detail: 
   return out.slice(0, MAX_ITEMS);
 }
 
-function tagItems(records: readonly Rec[], needle: string, detail: string): Item[] {
+function tagItems(records: readonly Rec[], family: "decor" | "ambience", detail: string): Item[] {
   const seen = new Set<string>();
   const out: Item[] = [];
   for (const r of records) {
-    for (const t of r.tags ?? []) {
-      if (!t.id.includes(needle) || seen.has(t.id)) continue;
-      seen.add(t.id);
-      out.push({ label: t.name, detail, evidence: [r.evidence_id], qlooId: t.id });
+    for (const name of r[family] ?? []) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      out.push({ label: name, detail, evidence: [r.evidence_id] });
     }
   }
   return out.slice(0, MAX_ITEMS);
 }
 
-/** Five named colours, each tied to one of the Qloo tags (cycling when there are fewer tags); none without tags. */
-function palette(tags: readonly Item[]): unknown[] {
-  if (tags.length === 0) return [];
-  return SWATCH_NAMES.slice(0, 5).map((label, i) => {
-    const t = tags[i % tags.length];
-    return { label, detail: t.detail, evidence: t.evidence, qlooId: t.qlooId, hex: SWATCH_HEX[i % SWATCH_HEX.length], tags: [t.label], role: i === 4 ? "accent" : "base" };
-  });
+/** Names only, in the order of the swatches the prompt lists: code owns the colours, tags and evidence. */
+function palette(prompt: string): unknown[] {
+  const listed = (prompt.match(/^d+. #/gm) ?? []).length;
+  return SWATCH_NAMES.slice(0, listed).map((label) => ({ label }));
 }
 
 function hotspotItems(heat: Rec, city: string): Item[] {
@@ -106,7 +103,7 @@ function brief(prompt: string): unknown {
       demographics: demo.map((r) => ({ label: "Age and gender skew", detail: r.summary?.slice(0, 380), evidence: [r.evidence_id] })),
     },
     aesthetic: {
-      palette: palette([...decor, ...ambience]),
+      palette: palette(prompt),
       lighting: ambience.slice(0, 3),
       materials: decor.slice(0, 3),
       referencePlaces: entityItems(records, ["place"], "Place this audience already loves."),

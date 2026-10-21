@@ -6,6 +6,7 @@ export type {
   NeedsInputEvent,
   NeedsInputOption,
   ProofEvent,
+  QueueEvent,
   ScoredPick,
   SectionConfidence,
   SectionKey,

@@ -146,7 +146,7 @@ describe("config and createLlm", () => {
   });
 
   it("throws a clear error for hand-built configs with an empty chain", () => {
-    expect(() => createLlm({ geminiModel: "m", geminiLightModel: "l", groqModel: "m", provider: "gemini", chain: [], fastChain: [] })).toThrow(/chain/);
+    expect(() => createLlm({ geminiModel: "m", geminiLightModel: "l", groqModel: "m", groqTokensPerMinute: 8000, groqTokenLimits: {}, provider: "gemini", chain: [], fastChain: [] })).toThrow(/chain/);
   });
 
   it("counts each logical call once, whatever the retries", async () => {

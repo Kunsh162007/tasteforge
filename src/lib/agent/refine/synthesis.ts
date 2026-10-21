@@ -2,15 +2,16 @@ import type { LlmProvider } from "@/lib/llm";
 import type { BriefDraft, BriefMode } from "../brief";
 import { fence } from "../fence";
 import { itemsAt, SLOTS, type SlotPath } from "../briefItems";
-import { toLlmView, type Evidence, type Ledger } from "../ledger";
+import type { Evidence, Ledger } from "../ledger";
 import { isUsable } from "../pipeline/context";
 import type { Signals } from "../pipeline/resolve";
-import { MODE_LABEL, requestDraft, SYNTHESIS_SYSTEM } from "../pipeline/synthesis";
+import { createAliases, leanView, type Aliases } from "../pipeline/promptView";
+import { derivePaletteFor, prepareReply, promptHeader, requestDraft, SYNTHESIS_SYSTEM_CODE_PALETTE } from "../pipeline/synthesis";
 import type { RefinePlan } from "./plan";
 
 /** One main-model JSON call that rewrites only the refreshed sections; the merge step enforces the keep/drop rules. */
 
-const REFINE_SYSTEM = `${SYNTHESIS_SYSTEM}
+const REFINE_SYSTEM = `${SYNTHESIS_SYSTEM_CODE_PALETTE}
 
 REFINEMENT: the user reviewed an earlier brief and gave feedback. You are shown the previous items of the sections to regenerate.
 - Items under KEEP stay exactly as they are, so do not rewrite them; just do not repeat them as new items.
@@ -49,21 +50,27 @@ function relevantRecords(i: RefineSynthesisInput): Evidence[] {
   return i.ledger.records.filter((r) => isUsable(r) && (!i.existingIds.has(r.id) || cited.has(r.id)));
 }
 
-export function buildRefinePrompt(i: RefineSynthesisInput): string {
+export function buildRefinePrompt(i: RefineSynthesisInput, aliases: Aliases = createAliases(relevantRecords(i))): string {
   const paths: SlotPath[] = SLOTS.filter((s) => i.plan.keep.has(s.path)).map((s) => s.path);
   return [
-    `Mode: ${MODE_LABEL[i.mode]}`,
-    `Request: ${fence(i.prompt)}`,
-    `City: ${i.city ? fence(i.city) : "none given (leave whereTheyAre out, aesthetic places may be empty)"}`,
-    `Resolved seeds: ${fence(i.signals.entityNames.join(", ") || "none")}; concept tags: ${fence(i.signals.tagNames.join(", ") || "none")}`,
+    ...promptHeader(i),
     `Sections to regenerate: ${i.plan.sections.join(", ")}`,
     `Lists to refresh: ${paths.join(", ")}`,
     ...describeLists(i),
     "",
     "Evidence records (cite their evidence_id values):",
-    JSON.stringify(relevantRecords(i).map(toLlmView)),
+    JSON.stringify(relevantRecords(i).map((r) => leanView(r, aliases))),
   ].join("\n");
 }
 
-export const synthesizeRefinement = (i: RefineSynthesisInput): Promise<BriefDraft> =>
-  requestDraft(i.llm, REFINE_SYSTEM, buildRefinePrompt(i));
+/** A refreshed palette is derived by code again from the whole ledger; the rejected colours change the hash, so it comes out different. */
+function refreshedPalette(i: RefineSynthesisInput) {
+  if (!i.plan.keep.has("aesthetic.palette")) return undefined;
+  return derivePaletteFor(i.ledger, i.signals, [...i.plan.dislikedLabels].sort().join(","));
+}
+
+export function synthesizeRefinement(i: RefineSynthesisInput): Promise<BriefDraft> {
+  const aliases = createAliases(relevantRecords(i));
+  const derived = refreshedPalette(i);
+  return requestDraft(i.llm, REFINE_SYSTEM, buildRefinePrompt(i, aliases), { prepare: prepareReply(aliases, derived) });
+}

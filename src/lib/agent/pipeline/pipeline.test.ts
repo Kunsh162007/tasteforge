@@ -33,6 +33,38 @@ async function run(routes: Routes, over: Partial<PipelineOptions> = {}) {
 const stages = (events: AgentEvent[]) =>
   events.flatMap((e) => (e.type === "stage" ? [`${e.stage}:${e.status}`] : []));
 
+describe("runPipeline when the model has to queue", () => {
+  it("passes the run's deadline and turns a wait into a queue event before the brief", async () => {
+    let deadline: number | undefined;
+    const routes = goodRoutes({
+      synthesis: (req) => {
+        deadline = req.deadlineAt;
+        req.onWait?.({ waitMs: 7_400 });
+        return draftFromPrompt(req.prompt);
+      },
+    });
+    const { result, events } = await run(routes);
+    expect(result.ok).toBe(true);
+    expect(deadline).toBeGreaterThan(Date.now());
+    const kinds = events.map((e) => e.type);
+    expect(events.find((e) => e.type === "queue")).toEqual({ type: "queue", waitSeconds: 7 });
+    expect(kinds.indexOf("queue")).toBeLessThan(kinds.indexOf("brief"));
+  });
+});
+
+describe("runPipeline model attribution", () => {
+  it("names the model that answered this run's synthesis, not the shared cascade's latest answer", async () => {
+    const routes = goodRoutes({
+      synthesis: (req) => {
+        req.onAnswered?.("groq:qwen/qwen3.8-27b");
+        return draftFromPrompt(req.prompt);
+      },
+    });
+    const { result } = await run(routes);
+    expect(result.brief?.model).toBe("groq:qwen/qwen3.8-27b");
+  });
+});
+
 describe("runPipeline with preset signals (city comparison)", () => {
   const signals = { entityIds: ["MOCK-ARTIST-1"], tagIds: [], entityNames: ["Velvet Static"], tagNames: [] };
 

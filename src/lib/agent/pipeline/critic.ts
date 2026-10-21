@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { JsonObject, LlmProvider } from "@/lib/llm";
 import type { SectionKey } from "../events";
-import { toToolParameters } from "../toolSchemas";
+import { stripDescriptions, toToolParameters } from "../toolSchemas";
 import { noteFallback, snapshotStats, viaTool, type PipelineCtx, type SectionStat } from "./context";
 import type { Signals } from "./resolve";
 import { stripNulls } from "./seeds";
@@ -138,7 +138,7 @@ export async function runCritic(ctx: PipelineCtx, input: CriticInput): Promise<C
             : []),
           `Already tried: ${[...tried].join("; ") || "nothing"}`,
         ].join("\n"),
-        schema: toToolParameters(CriticReplySchema) as JsonObject,
+        schema: stripDescriptions(toToolParameters(CriticReplySchema)) as JsonObject,
         tier: "light",
       });
     } catch {

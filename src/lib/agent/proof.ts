@@ -73,8 +73,9 @@ export async function fetchBaselineNames(llm: LlmProvider, r: BaselineRequest): 
     system: BASELINE_SYSTEM,
     prompt: `Audience and project: ${fence(r.prompt)}\nCity: ${r.city ? fence(r.city) : "none given"}`,
     schema: toToolParameters(BaselineSchema) as JsonObject,
+    // Same chain as TasteForge's own synthesis, so Taste Proof compares like with like.
     tier: "main",
-    route: "fast",
+    route: "main",
   });
   const parsed = BaselineSchema.safeParse(stripNulls(raw));
   if (!parsed.success) return [];

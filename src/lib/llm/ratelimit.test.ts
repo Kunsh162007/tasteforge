@@ -34,3 +34,16 @@ describe("nextUtcMidnight", () => {
     expect(nextUtcMidnight(Date.parse("2026-11-02T00:00:00Z"))).toBe(Date.parse("2026-11-03T00:00:00Z"));
   });
 });
+
+describe("rate-limit detail for logs", () => {
+  it("keeps Groq's numbers and drops organisation and model identifiers", () => {
+    const body = JSON.stringify({
+      error: { message: "Rate limit reached for model `qwen/qwen3.8-27b` in organization `org_01abcXYZ` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 7100, Requested 5200. Please try again in 3.2s." },
+    });
+    const info = parseRateLimit("4", body);
+    expect(info.detail).toContain("Limit 8000, Used 7100, Requested 5200");
+    expect(info.detail).not.toMatch(/org_|qwen/);
+    expect(info.retryAfterMs).toBe(4000);
+    expect(parseRateLimit(undefined, "not json").detail).toBeUndefined();
+  });
+});

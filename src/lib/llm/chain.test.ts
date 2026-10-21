@@ -26,16 +26,23 @@ describe("chain config", () => {
   it("defaults to the measured cascades: Groq first for both call types, Gemini as the deeper fallback", () => {
     expect(ids(loadLlmConfig(keys))).toEqual([
       "groq:openai/gpt-oss-120b",
-      "gemini:gemini-2.5-flash",
       "groq:qwen/qwen3.8-27b",
+      "gemini:gemini-2.5-flash",
       "gemini:gemini-3.5-flash",
       "gemini:gemini-3.5-flash-lite",
       "groq:openai/gpt-oss-20b",
     ]);
     expect(DEFAULT_LLM_CHAIN).toContain("groq:qwen/qwen3.8-27b");
     const fast = loadLlmConfig(keys).fastChain.map((e) => `${e.provider}:${e.model}`);
-    expect(fast[0]).toBe("groq:openai/gpt-oss-120b");
+    // The cheap calls start on the small, fast models; the big one is kept for the synthesis.
+    expect(fast.slice(0, 3)).toEqual(["groq:openai/gpt-oss-20b", "groq:qwen/qwen3.8-27b", "groq:openai/gpt-oss-120b"]);
     expect(fast).toHaveLength(DEFAULT_LLM_CHAIN_FAST.split(",").length);
+    expect(loadLlmConfig(keys).chain[0]).toMatchObject({ model: "openai/gpt-oss-120b" });
+    expect(loadLlmConfig(keys)).toMatchObject({ groqTokensPerMinute: 8000, groqTokenLimits: {} });
+    expect(loadLlmConfig({ ...keys, GROQ_TOKENS_PER_MINUTE: "6000", GROQ_TOKEN_LIMITS: "qwen/qwen3.8-27b=5000" })).toMatchObject({
+      groqTokensPerMinute: 6000,
+      groqTokenLimits: { "qwen/qwen3.8-27b": 5000 },
+    });
   });
 
   it("LLM_CHAIN_FAST and LLM_CHAIN_MAIN override their own route; LLM_CHAIN covers a route without its own", () => {

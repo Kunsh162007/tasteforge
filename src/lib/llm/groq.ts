@@ -1,6 +1,7 @@
 import { postJson } from "./http";
 import { parseJsonText } from "./json";
-import { LlmError, type JsonObject, type JsonRequest, type LlmProvider } from "./types";
+import type { Observation } from "./tokenBudget";
+import { LlmError, REPLY_TOKEN_CAP, type JsonObject, type JsonRequest, type LlmProvider } from "./types";
 
 const PROVIDER = "groq";
 /** verified live 2026-10-20: the free tier rejects (HTTP 413) requests over its 8000-token minute budget; leave room for the reply. */
@@ -47,7 +48,27 @@ export type GroqOptions = {
   readonly model: string;
   readonly fetchImpl?: typeof fetch;
   readonly timeoutMs?: number;
+  /** Receives the rate-limit headers and token usage of every reply, to steer load towards models with room. */
+  readonly onUsage?: (o: Observation) => void;
 };
+
+const numberHeader = (h: Headers, name: string): number | undefined => {
+  const n = Number(h.get(name));
+  return h.get(name) !== null && Number.isFinite(n) ? n : undefined;
+};
+
+/** Groq's `x-ratelimit-*` headers: the provider's own count of the model's free tokens this minute. */
+export function rateLimitObservation(h: Headers): Observation {
+  const remainingTokens = numberHeader(h, "x-ratelimit-remaining-tokens");
+  const limitTokens = numberHeader(h, "x-ratelimit-limit-tokens");
+  return { ...(remainingTokens !== undefined ? { remainingTokens } : {}), ...(limitTokens !== undefined ? { limitTokens } : {}) };
+}
+
+/** Tokens a reply reports having used (prompt plus completion). */
+export function usedTokens(raw: unknown): number | undefined {
+  const total = (raw as { usage?: { total_tokens?: unknown } } | null)?.usage?.total_tokens;
+  return typeof total === "number" && Number.isFinite(total) ? total : undefined;
+}
 
 function parseText(raw: unknown): string {
   const message = (raw as { choices?: { message?: Record<string, unknown> }[] })?.choices?.[0]?.message;
@@ -72,6 +93,7 @@ export function createGroqProvider(o: GroqOptions): LlmProvider {
       body,
       fetchImpl,
       timeoutMs: o.timeoutMs ?? 60_000,
+      onHeaders: o.onUsage ? (h) => o.onUsage?.(rateLimitObservation(h)) : undefined,
     });
   return {
     name: PROVIDER,
@@ -84,9 +106,13 @@ export function createGroqProvider(o: GroqOptions): LlmProvider {
         ],
         response_format: { type: "json_object" },
         temperature: TEMPERATURE[req.tier ?? "main"],
+        max_completion_tokens: REPLY_TOKEN_CAP[(req.route ?? (req.tier === "light" ? "fast" : "main"))],
         ...(reasoningEffortFor(o.model) ? { reasoning_effort: reasoningEffortFor(o.model) } : {}),
       };
-      return parseJsonText(PROVIDER, parseText(await call(body)));
+      const raw = await call(body);
+      const tokens = usedTokens(raw);
+      if (tokens !== undefined) o.onUsage?.({ tokens });
+      return parseJsonText(PROVIDER, parseText(raw));
     },
   };
 }

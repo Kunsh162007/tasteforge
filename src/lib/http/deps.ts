@@ -1,6 +1,6 @@
 import { getGeocoder } from "@/lib/geo/geocoder";
 import type { ReverseGeocoder } from "@/lib/geo/nominatim";
-import { createLlm, type LlmProvider } from "@/lib/llm";
+import { createLlm, type LlmError, type LlmProvider } from "@/lib/llm";
 import { createQlooClientFromEnv, type QlooClient } from "@/lib/qloo";
 import { singleton } from "@/lib/singleton";
 import { getBudget } from "./budget";
@@ -16,7 +16,13 @@ export type RouteDeps = {
   readonly geocode: ReverseGeocoder | undefined;
 };
 
-export const getLlm = (): LlmProvider => singleton("llm", () => createLlm(undefined, { onCall: () => getBudget().recordCall() }));
+/** One line per model switch, so a slow or busy period can be traced to the model that refused ("429 rate_limit", "503 server"). */
+const logSwitch = (error: LlmError, from: string, to: string): void => {
+  console.warn(`[tasteforge] llm ${from} -> ${to}: ${error.kind}${error.status ? ` HTTP ${error.status}` : ""}${error.retryAfterMs ? ` (retry in ${Math.round(error.retryAfterMs / 1000)}s)` : ""}${error.detail ? ` - ${error.detail}` : ""}`);
+};
+
+export const getLlm = (): LlmProvider =>
+  singleton("llm", () => createLlm(undefined, { onCall: () => getBudget().recordCall(), onFallback: logSwitch }));
 
 export const getQloo = (): QlooClient => singleton("qloo", () => createQlooClientFromEnv());
 

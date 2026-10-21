@@ -1,34 +1,12 @@
 import { after, connection, NextResponse } from "next/server";
-import { generateBrief } from "@/lib/agent";
-import { getGeocoder } from "@/lib/geo/geocoder";
 import { allowShowcaseRetry } from "@/lib/http/guards";
-import { getLlm, getQloo } from "@/lib/http/deps";
 import { clientIp } from "@/lib/http/request";
 import { getLedgerSigner } from "@/lib/security/ledgerSig";
-import { createShowcaseService, SHOWCASE_TIMEOUT, type ShowcaseEntry, type ShowcaseService } from "@/lib/showcase";
-import { singleton } from "@/lib/singleton";
+import { getShowcaseService } from "@/lib/http/showcaseService";
+import type { ShowcaseEntry } from "@/lib/showcase";
 
 // Generation continues after the response (via `after`), so allow the full function budget.
 export const maxDuration = 120;
-
-// One service per server instance, kept across dev hot reloads.
-const getService = (): ShowcaseService =>
-  singleton("showcase", () =>
-    createShowcaseService({
-      generate: (def, onEvent) =>
-        generateBrief({
-          prompt: def.prompt,
-          mode: def.mode,
-          city: def.city,
-          llm: getLlm(),
-          qloo: getQloo(),
-          geocode: getGeocoder(),
-          onEvent,
-          allowNeedsInput: false,
-          timeoutMs: SHOWCASE_TIMEOUT,
-        }),
-    }),
-  );
 
 /** True while something is still to be built or will be retried automatically. */
 const hasPendingWork = (items: readonly ShowcaseEntry[]): boolean =>
@@ -48,7 +26,7 @@ function withSignatures(item: ShowcaseEntry): ShowcaseEntry & { signatures?: Ret
  */
 export async function GET(req: Request): Promise<Response> {
   await connection(); // opt out of build-time prerendering: results are per-server state
-  const service = getService();
+  const service = getShowcaseService();
   const retry = new URL(req.url).searchParams.get("retry") === "1" && allowShowcaseRetry(clientIp(req));
   const items = service.list();
   if (retry || hasPendingWork(items)) after(() => service.ensure({ force: retry }));

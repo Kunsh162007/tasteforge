@@ -45,10 +45,34 @@ export const SHOWCASES: readonly ShowcaseDef[] = [
     mode: "know_audience",
     city: "New York",
   },
+  {
+    id: "boutique-brooklyn",
+    title: "A vintage-leaning boutique in Brooklyn",
+    prompt:
+      "I am opening a small independent clothing boutique in Brooklyn selling vintage-inspired pieces made by local designers. Find the audience that would love it and where to reach them.",
+    mode: "find_audience",
+    city: "Brooklyn",
+  },
+  {
+    id: "record-bar-chicago",
+    title: "A record-store bar in Chicago",
+    prompt:
+      "We are opening a record-store bar in Chicago where people dig through vinyl over natural wine. Our crowd loves jazz, soul and post-punk.",
+    mode: "know_audience",
+    city: "Chicago",
+  },
+  {
+    id: "popup-paris",
+    title: "A three-week pop-up bakery in Paris",
+    prompt:
+      "I am running a three-week pop-up bakery in Paris for design-minded locals who love slow mornings, ceramics and film photography.",
+    mode: "know_audience",
+    city: "Paris",
+  },
 ];
 
 /** Bump when the result shape changes so stale disk entries are ignored. */
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 /** First retry delay after a failure; doubles per attempt up to MAX_BACKOFF_MS. */
 export const BASE_BACKOFF_MS = 30_000;
 export const MAX_BACKOFF_MS = 5 * 60_000;
@@ -96,6 +120,8 @@ export type ShowcaseOptions = {
   readonly now?: () => number;
   readonly sleep?: (ms: number) => Promise<void>;
   readonly spacingMs?: number;
+  /** Tells apart results made from different data sources (mock and live Qloo, scripted and real LLM) in the shared disk cache. */
+  readonly source?: string;
 };
 
 export type EnsureOptions = {
@@ -110,24 +136,24 @@ export type ShowcaseService = {
   ensure(options?: EnsureOptions): Promise<void>;
 };
 
-const signatureOf = (d: ShowcaseDef): string =>
-  createHash("sha256").update(JSON.stringify([CACHE_VERSION, d.prompt, d.mode, d.city ?? ""])).digest("hex").slice(0, 16);
+const signatureOf = (d: ShowcaseDef, source: string): string =>
+  createHash("sha256").update(JSON.stringify([CACHE_VERSION, d.prompt, d.mode, d.city ?? "", source])).digest("hex").slice(0, 16);
 
 type DiskEntry = { readonly signature: string; readonly result: ShowcaseResult };
 
-function readDisk(dir: string, def: ShowcaseDef): ShowcaseResult | undefined {
+function readDisk(dir: string, def: ShowcaseDef, source: string): ShowcaseResult | undefined {
   try {
     const entry = JSON.parse(readFileSync(join(dir, `${def.id}.json`), "utf8")) as DiskEntry;
-    return entry.signature === signatureOf(def) ? entry.result : undefined;
+    return entry.signature === signatureOf(def, source) ? entry.result : undefined;
   } catch {
     return undefined;
   }
 }
 
-function writeDisk(dir: string, def: ShowcaseDef, result: ShowcaseResult): void {
+function writeDisk(dir: string, def: ShowcaseDef, result: ShowcaseResult, source: string): void {
   try {
     mkdirSync(dir, { recursive: true });
-    writeFileSync(join(dir, `${def.id}.json`), JSON.stringify({ signature: signatureOf(def), result } satisfies DiskEntry));
+    writeFileSync(join(dir, `${def.id}.json`), JSON.stringify({ signature: signatureOf(def, source), result } satisfies DiskEntry));
   } catch {
     // The disk cache is a convenience; the in-memory copy still serves requests.
   }
@@ -146,6 +172,7 @@ export function createShowcaseService(o: ShowcaseOptions): ShowcaseService {
   const now = o.now ?? Date.now;
   const sleep = o.sleep ?? defaultSleep;
   const spacingMs = o.spacingMs ?? SPACING_MS;
+  const source = o.source ?? "";
   const results = new Map<string, ShowcaseResult>();
   const failures = new Map<string, Failure>();
   let running: Promise<void> | undefined;
@@ -157,7 +184,7 @@ export function createShowcaseService(o: ShowcaseOptions): ShowcaseService {
     loaded = true;
     if (dir === false) return;
     for (const def of defs) {
-      const hit = readDisk(dir, def);
+      const hit = readDisk(dir, def, source);
       if (hit) results.set(def.id, hit);
     }
   }
@@ -184,7 +211,7 @@ export function createShowcaseService(o: ShowcaseOptions): ShowcaseService {
       };
       results.set(def.id, result);
       failures.delete(def.id);
-      if (dir !== false) writeDisk(dir, def, result);
+      if (dir !== false) writeDisk(dir, def, result, source);
     } catch (e) {
       failures.set(def.id, {
         message: e instanceof Error ? e.message : "The brief could not be built.",

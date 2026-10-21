@@ -72,6 +72,12 @@ export type NeedsInputEvent = {
 
 export type ProofEvent = { readonly type: "proof"; readonly proof: TasteProof };
 
+/**
+ * The run is waiting for model capacity (every fast model is cooling down or out of its per-minute tokens). Additive:
+ * clients that do not know the type ignore it. The next stage, tool or brief event means the wait is over.
+ */
+export type QueueEvent = { readonly type: "queue"; readonly waitSeconds: number };
+
 export type AgentEvent =
   /** Free-text note; the pipeline no longer emits it, but the stream contract still accepts it. */
   | { readonly type: "thinking"; readonly text: string }
@@ -98,4 +104,5 @@ export type AgentEvent =
   | StageEvent
   | NeedsInputEvent
   | ProofEvent
+  | QueueEvent
   | { readonly type: "error"; readonly message: string; readonly retryable: boolean };

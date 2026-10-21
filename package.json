@@ -15,7 +15,10 @@
     "test:e2e": "playwright test",
     "qloo:check": "tsx scripts/qloo-check.mts",
     "bench:llm": "tsx scripts/llm-bench.mts",
-    "benchmark": "tsx scripts/benchmark.mts"
+    "benchmark": "tsx scripts/benchmark.mts",
+    "warm": "tsx scripts/warm.mts",
+    "loadtest": "tsx scripts/loadtest.mts",
+    "prompt:size": "tsx scripts/prompt-size.mts"
   },
   "dependencies": {
     "leaflet": "^1.9.4",

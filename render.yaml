@@ -17,12 +17,15 @@ services:
       - key: QLOO_API_KEY
         sync: false # set in the Render dashboard
       # Two chains, tried in order; a model that hits a quota or outage cools down and the next one answers.
-      # FAST: seeds, critic, Taste Proof baseline. MAIN: brief synthesis. Groq first (0.4 to 1 s and about 5 s
-      # measured on 2026-10-20), Gemini behind it.
+      # Every Groq model has its own per-minute token limit, so the chains spread the load: FAST (seeds, critic, Taste
+      # Proof baseline) starts on the small, quick models, MAIN (brief synthesis) keeps gpt-oss-120b first. A model whose
+      # minute budget is nearly spent is passed over before it is called (see GROQ_TOKENS_PER_MINUTE).
       - key: LLM_CHAIN_FAST
-        value: groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-20b,gemini:gemini-2.5-flash,gemini:gemini-3.5-flash-lite
+        value: groq:openai/gpt-oss-20b,groq:qwen/qwen3.8-27b,groq:openai/gpt-oss-120b,gemini:gemini-2.5-flash,gemini:gemini-3.5-flash-lite
       - key: LLM_CHAIN_MAIN
-        value: groq:openai/gpt-oss-120b,gemini:gemini-2.5-flash,groq:qwen/qwen3.8-27b,gemini:gemini-3.5-flash,gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-20b
+        value: groq:openai/gpt-oss-120b,groq:qwen/qwen3.8-27b,gemini:gemini-2.5-flash,gemini:gemini-3.5-flash,gemini:gemini-3.5-flash-lite,groq:openai/gpt-oss-20b
+      - key: GROQ_TOKENS_PER_MINUTE
+        value: "8000" # free-tier limit per Groq model; the x-ratelimit headers refine it at run time
       - key: GEMINI_API_KEY
         sync: false
       - key: GROQ_API_KEY
@@ -33,3 +36,5 @@ services:
         value: "4"
       - key: DAILY_LLM_BUDGET
         value: "600"
+      - key: SHOWCASE_WARM_ON_BOOT
+        value: "1" # build the six showcase briefs one at a time right after boot; npm run warm waits for them

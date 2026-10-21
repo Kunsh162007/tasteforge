@@ -8,6 +8,8 @@ export type PostJsonOptions = {
   readonly body: JsonObject;
   readonly fetchImpl: typeof fetch;
   readonly timeoutMs: number;
+  /** Called with the response headers of every reply, successful or not (rate-limit bookkeeping). */
+  readonly onHeaders?: (headers: Headers) => void;
 };
 
 function kindForStatus(status: number): LlmError["kind"] {
@@ -41,6 +43,7 @@ export async function postJson(o: PostJsonOptions): Promise<unknown> {
       body: JSON.stringify(o.body),
       signal: controller.signal,
     });
+    o.onHeaders?.(res.headers);
     if (!res.ok) {
       throw await failure(o.provider, res);
     }
