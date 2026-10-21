@@ -23,15 +23,15 @@ describe("TasteProofPanel", () => {
     const meter = screen.getByRole("meter", { name: "Affinity for Mitski" });
     expect(meter.getAttribute("aria-valuenow")).toBe("0.91");
     expect(screen.queryByRole("meter", { name: "Affinity for Harbor & Vine Bistro" })).toBeNull();
-    expect(screen.getByText("Not found in Qloo")).toBeTruthy();
-    expect(screen.getByText(/1 of 5 picks not found in Qloo/)).toBeTruthy();
+    expect(screen.getByText("Not in Qloo's data for Brooklyn")).toBeTruthy();
+    expect(screen.getByText(/1 of 5 picks couldn't be verified in Qloo/)).toBeTruthy();
   });
 
   it("leads with what the plain answer gets wrong before the fit comparison", () => {
     render(<TasteProofPanel proof={sampleProof} />);
     const checks = within(screen.getByRole("list", { name: "What the proof checks" })).getAllByRole("heading", { level: 3 });
-    expect(checks.map((h) => h.textContent)).toEqual(["Picks Qloo couldn't find", "Real places in Brooklyn", "Audience fit"]);
-    const missing = screen.getByText("Picks Qloo couldn't find").closest("li") as HTMLElement;
+    expect(checks.map((h) => h.textContent)).toEqual(["Picks Qloo couldn't verify", "Real places in Brooklyn", "Sanity check: audience fit"]);
+    const missing = screen.getByText("Picks Qloo couldn't verify").closest("li") as HTMLElement;
     expect(within(missing).getByText("1 of 5")).toBeTruthy();
     expect(within(missing).getByText("0 of 5")).toBeTruthy();
   });
@@ -42,12 +42,36 @@ describe("TasteProofPanel", () => {
     expect(within(local).getByText("2 of 2")).toBeTruthy();
     expect(screen.getByText("14 Court St Brooklyn")).toBeTruthy();
     expect(screen.queryByText(/closer to this audience|×/)).toBeNull();
-    expect(screen.getByText(/TasteForge is at least as close/)).toBeTruthy();
+    expect(screen.queryByText(/at least as close|never lower/)).toBeNull();
+    expect(screen.getByText(/Qloo normalizes affinity within each query/)).toBeTruthy();
   });
 
-  it("admits when the plain answer scores higher on the picks it did find", () => {
+  it("makes no claim about which list fits better, whichever scores higher", () => {
     render(<TasteProofPanel proof={{ ...sampleProof, baselineAvg: 0.95 }} />);
-    expect(screen.getByText(/plain answer scores a little higher/)).toBeTruthy();
+    expect(screen.queryByText(/scores a little higher|at least as close/)).toBeNull();
+  });
+
+  it("never says picks are invented", () => {
+    const { container } = render(<TasteProofPanel proof={sampleProof} />);
+    expect(container.textContent).not.toMatch(/invented/i);
+  });
+
+  it("labels wrong-type and other-city picks instead of calling them not found", () => {
+    const proof = {
+      ...sampleProof,
+      baseline: [
+        { name: "Arundhati Roy", kind: "artist" as const, affinity: null, status: "wrong_type" as const, matchedKind: "author" },
+        { name: "Kilo Vintage", kind: "place" as const, affinity: 0.4, qlooId: "x", status: "other_city" as const },
+        { name: "Amoeba", kind: "place" as const, affinity: null, status: "unverified" as const },
+        { name: "Chaayos", kind: "place" as const, affinity: 0.7, status: "verified" as const },
+      ],
+      baselineNotFound: 3,
+    };
+    render(<TasteProofPanel proof={proof} />);
+    expect(screen.getByText("Wrong type: Qloo lists a author")).toBeTruthy();
+    expect(screen.getAllByText("In Qloo, but not in Brooklyn").length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/1 not in Qloo's data for Brooklyn, 1 listed under another type and 1 only in another city/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/3 of its 4 picks that Qloo couldn't verify in Brooklyn/)).toBeTruthy();
   });
 
   it("offers a trace button per TasteForge pick that opens its evidence", async () => {
@@ -69,7 +93,7 @@ describe("TasteProofPanel", () => {
     const plain = screen.getByRole("region", { name: "Plain LLM" });
     expect(within(plain).getByText("n/a")).toBeTruthy();
     expect(within(plain).queryByText("0.00")).toBeNull();
-    expect(within(plain).getByText(new RegExp(`${missing.length} of ${missing.length} picks not found in Qloo`))).toBeTruthy();
+    expect(within(plain).getByText(new RegExp(`${missing.length} of ${missing.length} picks couldn't be verified in Qloo`))).toBeTruthy();
     expect(screen.getByText("n/a", { selector: ".check__num" })).toBeTruthy();
   });
 
@@ -84,14 +108,14 @@ describe("TasteProofPanel", () => {
 describe("TasteProofPanel verdict", () => {
   it("opens with one plain sentence and a legend, and gives each check a plain-language question", () => {
     render(<TasteProofPanel proof={sampleProof} />);
-    expect(screen.getByText(/A plain AI answer named 1 of its 5 picks that Qloo has no record of/)).toBeTruthy();
-    expect(screen.getByText("Do these names exist in Qloo's data at all?")).toBeTruthy();
+    expect(screen.getByText(/A plain AI answer named 1 of its 5 picks that Qloo couldn't verify in Brooklyn/)).toBeTruthy();
+    expect(screen.getByText("Does Qloo's data have each name, as the right type, in the right city?")).toBeTruthy();
     expect(document.getElementById("proof")).not.toBeNull();
   });
 
   it("does not claim a miss when every plain pick was found", () => {
     const found = sampleProof.baseline.map((p) => ({ ...p, affinity: p.affinity ?? 0.2 }));
     render(<TasteProofPanel proof={{ ...sampleProof, baseline: found, baselineNotFound: 0 }} />);
-    expect(screen.getByText(/every name was found/)).toBeTruthy();
+    expect(screen.getByText(/every name was verified/)).toBeTruthy();
   });
 });

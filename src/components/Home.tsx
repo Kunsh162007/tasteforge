@@ -17,33 +17,37 @@ type Props = {
   onSubmit: (body: BriefRequestBody) => void;
 };
 
+const HERO_SHOWCASE = "record-bar-chicago";
+
 const STEPS: readonly { title: string; text: string }[] = [
-  { title: "Describe it", text: "A sentence or two about what you are opening, making or selling, and a city if it is local." },
+  { title: "Describe it", text: "A sentence or two about the café, bar or restaurant you are opening, and its city. Makers can describe what they sell." },
   {
     title: "Watch the graph walk",
     text: "TasteForge asks Qloo who loves it, what they listen to, how their spaces look and where they gather. You see each question as it is asked.",
   },
   {
     title: "Keep a brief you can check",
-    text: "Every line has a why button that opens the Qloo record behind it. A Taste Proof scores the result against a plain AI answer.",
+    text: "Every line has a why button that opens the Qloo record behind it. Taste Proof then checks a plain AI answer to the same question against Qloo, so you can see what could not be verified.",
   },
 ];
 
 /** First screen: what it is, who it is for, a real brief to look at, and finished briefs to open in one click. */
 export function Home({ showcasePhase, showcaseItems, onOpenShowcase, onRetryShowcase, onSubmit }: Props) {
-  const featured = useMemo(() => showcaseItems.find((i) => i.status === "ready" && i.brief), [showcaseItems]);
+  // The Chicago record-store bar is the strongest brief (real, local places and artists); any ready brief is the fallback.
+  const featured = useMemo(() => showcaseItems.find((i) => i.status === "ready" && i.brief && i.id === HERO_SHOWCASE) ?? showcaseItems.find((i) => i.status === "ready" && i.brief), [showcaseItems]);
   return (
     <div className="home">
       <section className="hero" aria-labelledby="hero-h">
         <div className="hero__copy">
           <h1 id="hero-h" className="hero__title">
-            Know who you are making it for.
+            A brief for your café, with receipts.
           </h1>
           <p className="hero__lede">
-            Describe a project. TasteForge walks Qloo&rsquo;s taste graph and hands back a one-page creative brief: palette, places, sound and pairings,
-            with the evidence for every line.
+            Opening a café, bar or restaurant? Describe it in a sentence. TasteForge asks Qloo&rsquo;s taste graph who your crowd is, what they play,
+            how their favourite rooms look and where they gather, then hands back a one-page brief. Every line has a receipt: the Qloo record behind
+            it, one click away.
           </p>
-          <p className="hero__for">Made for café owners, makers, small studios and anyone who has had to guess who their work is for.</p>
+          <p className="hero__for">Made for independent café, bar and restaurant founders before opening day. Makers and small studios get the same brief.</p>
           <div className="hero__actions">
             <a className="btn-primary" href="#showcase">
               Open a finished brief

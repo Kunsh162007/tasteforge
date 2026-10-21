@@ -70,6 +70,7 @@ export type Brief = BriefDraft & {
 export type DroppedItem = {
   readonly section: string;
   readonly label: string;
-  readonly reason: "no_evidence" | "unknown_evidence";
+  /** not_in_evidence: a menu idea with words that appear nowhere in the Qloo tags or names. */
+  readonly reason: "no_evidence" | "unknown_evidence" | "not_in_evidence";
   readonly evidence: readonly string[];
 };

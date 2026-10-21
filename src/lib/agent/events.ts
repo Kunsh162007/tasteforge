@@ -23,6 +23,10 @@ export type ScoredPick = {
   readonly address?: string;
   /** Places: true when Qloo located it (address and coordinates) in the requested city. */
   readonly local?: boolean;
+  /** Baseline picks: how the name held up in Qloo. */
+  readonly status?: "verified" | "wrong_type" | "other_city" | "unverified";
+  /** For wrong_type: the type Qloo lists a same-named entity under ("author", "brand"...). */
+  readonly matchedKind?: string;
 };
 
 export type TasteProof = {
@@ -31,6 +35,7 @@ export type TasteProof = {
   /** Mean affinity over the picks Qloo found only; null when it found none (shown as "n/a"). */
   readonly baselineAvg: number | null;
   readonly tasteforgeAvg: number | null;
+  /** Baseline picks Qloo could not verify in the city: not found, wrong type, or only in another city. */
   readonly baselineNotFound: number;
   /** The requested city, when the brief had one (frames the local-verification stat). */
   readonly city?: string;

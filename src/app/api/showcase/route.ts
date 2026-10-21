@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { after, connection, NextResponse } from "next/server";
 import { allowShowcaseRetry } from "@/lib/http/guards";
 import { clientIp } from "@/lib/http/request";
@@ -7,6 +8,19 @@ import type { ShowcaseEntry } from "@/lib/showcase";
 
 // Generation continues after the response (via `after`), so allow the full function budget.
 export const maxDuration = 120;
+
+/**
+ * Rebuilding every showcase spends LLM calls and empties the cache while it runs, so it is for the operator only:
+ * it needs SHOWCASE_ADMIN_TOKEN to be set on the server and the same value in the `x-warm-token` header (never the URL,
+ * which proxies log). Without the variable it is off.
+ */
+function mayRegenerate(token: string | null): boolean {
+  const expected = process.env.SHOWCASE_ADMIN_TOKEN?.trim();
+  if (!expected || !token) return false;
+  const a = Buffer.from(token);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 /** True while something is still to be built or will be retried automatically. */
 const hasPendingWork = (items: readonly ShowcaseEntry[]): boolean =>
@@ -27,10 +41,13 @@ function withSignatures(item: ShowcaseEntry): ShowcaseEntry & { signatures?: Ret
 export async function GET(req: Request): Promise<Response> {
   await connection(); // opt out of build-time prerendering: results are per-server state
   const service = getShowcaseService();
-  const retry = new URL(req.url).searchParams.get("retry") === "1" && allowShowcaseRetry(clientIp(req));
+  const params = new URL(req.url).searchParams;
+  const retry = params.get("retry") === "1" && allowShowcaseRetry(clientIp(req));
+  const regenerate = params.get("regenerate") === "1" && mayRegenerate(req.headers.get("x-warm-token"));
   const items = service.list();
-  if (retry || hasPendingWork(items)) after(() => service.ensure({ force: retry }));
+  if (regenerate) after(() => service.ensure({ regenerate: true }));
+  else if (retry || hasPendingWork(items)) after(() => service.ensure({ force: retry }));
   // Report the state as of now: a forced retry shows its failed items as queued right away.
-  const state = retry ? items.map((i) => (i.status === "failed" ? { ...i, status: "queued" as const, nextRetryAt: undefined } : i)) : items;
+  const state = regenerate ? items.map((i) => ({ ...i, status: "queued" as const })) : retry ? items.map((i) => (i.status === "failed" ? { ...i, status: "queued" as const, nextRetryAt: undefined } : i)) : items;
   return NextResponse.json({ items: state.map(withSignatures) }, { headers: { "Cache-Control": "no-store" } });
 }

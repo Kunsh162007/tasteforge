@@ -38,3 +38,35 @@ describe("summaries", () => {
     expect(trendingDraft(base, { data: [{ date: "2026-01-01" }] }).summary).toMatch(/flat/);
   });
 });
+
+describe("heatmapDraft with a city centre", () => {
+  const base = { endpoint: "/v2/insights (urn:heatmap)", params: {} };
+  const NYC = { lat: 40.7128, lon: -74.006, radiusKm: 22 };
+  const cell = (geohash: string, latitude: number, longitude: number, affinity: number) => ({ geohash, latitude, longitude, affinity });
+
+  it("keeps cells within the city's reach and drops Rochester, however strong", () => {
+    const draft = heatmapDraft(
+      base,
+      { data: [cell("rochester", 43.1566, -77.6088, 1), cell("buffalo", 42.8864, -78.8784, 0.99), cell("les", 40.715, -73.985, 0.9), cell("bk", 40.69, -73.95, 0.8)] },
+      "New York",
+      NYC,
+    );
+    expect(draft.entities?.map((e) => e.id)).toEqual(["les", "bk"]);
+    expect(draft.summary).toContain("2 heatmap hotspots in New York");
+  });
+
+  it("describes direction from the city centre, not from the mean of the cells", () => {
+    const draft = heatmapDraft(base, { data: [cell("north", 40.8, -74.006, 0.9)] }, "New York", NYC);
+    expect(draft.entities?.[0].note).toBe("north of the New York centre, about 10 km out");
+  });
+
+  it("says why nothing is left when every cell lies outside the reach", () => {
+    const draft = heatmapDraft(base, { data: [cell("rochester", 43.1566, -77.6088, 1)] }, "New York", NYC);
+    expect(draft.summary).toMatch(/^No results\. Every hotspot Qloo returned lies more than 22 km from the New York centre/);
+  });
+
+  it("leaves the cells alone when the city centre is unknown", () => {
+    const draft = heatmapDraft(base, { data: [cell("a", 43.1566, -77.6088, 1)] }, "Springfield");
+    expect(draft.entities).toHaveLength(1);
+  });
+});

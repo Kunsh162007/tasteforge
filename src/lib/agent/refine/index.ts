@@ -12,6 +12,8 @@ import { modelField, PIPELINE_TIMEOUT_MS, withinDeadline } from "../pipeline";
 import { resolveFromPrompt, resolveSeeds, type Signals } from "../pipeline/resolve";
 import { extractSeeds } from "../pipeline/seeds";
 import { walkSections } from "../pipeline/walk";
+import { brandScopeFor } from "../brandScope";
+import { dedupeBrief } from "../dedupe";
 import { validateBrief } from "../validator";
 import { mergeRefinement } from "./merge";
 import { buildPlan, type RefinePlan } from "./plan";
@@ -95,7 +97,7 @@ function startRun(o: RefineOptions): Run {
   const emit = (e: AgentEvent): void => o.onEvent?.(e);
   const deadlineAt = Date.now() + (o.timeoutMs ?? PIPELINE_TIMEOUT_MS);
   const llm = withinDeadline(o.llm, deadlineAt, emit);
-  const ctx = createCtx({ qloo: o.qloo, emit, geocode: o.geocode });
+  const ctx = createCtx({ qloo: o.qloo, emit, geocode: o.geocode, brandScope: brandScopeFor(o.request.prompt) });
   ctx.box.ledger = { records: o.request.evidence };
   const stage: Run["stage"] = (name, status, detail) => emit({ type: "stage", stage: name, status, ...(detail ? { detail } : {}) });
   return { ctx, llm, stage };
@@ -133,7 +135,9 @@ async function synthesisStage(run: Run, o: RefineOptions, p: Prepared): Promise<
   const existingIds = new Set(request.evidence.map((e) => e.id));
   const draft = await synthesizeRefinement({ llm: run.llm, prompt: request.prompt, mode: request.mode, city: p.city, signals: p.signals, ledger, previous: request.brief, plan: p.plan, existingIds });
   const merged = mergeRefinement(request.brief, draft, p.plan);
-  const { brief, dropped } = validateBrief(merged, request.mode, ledger);
+  const validated = validateBrief(merged, request.mode, ledger);
+  const brief = dedupeBrief(validated.brief);
+  const dropped = validated.dropped;
   const stats = snapshotStats(run.ctx);
   const confidence = mergedConfidence(request.brief.sectionConfidence, sectionConfidence(brief, stats), p.plan.sections);
   run.stage("synthesis", "done", `grounding ${Math.round(brief.groundingScore * 100)}%`);

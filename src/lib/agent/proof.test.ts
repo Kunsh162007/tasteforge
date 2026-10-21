@@ -24,6 +24,16 @@ describe("baseline", () => {
     expect(picks.filter((p) => p.kind === "brand")).toHaveLength(4);
   });
 
+  it("accepts a reply that lists more names than asked for or a very long name, instead of losing the whole proof", async () => {
+    const llm = routedLlm({
+      baseline: { artists: Array.from({ length: 14 }, (_, i) => `Artist ${i}`), places: [`The ${"Very ".repeat(30)}Long Cafe`], brands: ["Nike"] },
+    });
+    const picks = await fetchBaselineNames(llm, { prompt: "p", city: "Brooklyn" });
+    expect(picks.filter((p) => p.kind === "artist")).toHaveLength(6);
+    expect(picks.find((p) => p.kind === "place")?.name.length).toBeLessThanOrEqual(80);
+    expect(picks.filter((p) => p.kind === "brand")).toHaveLength(1);
+  });
+
   it("returns nothing for an unusable reply and never rejects when started in the background", async () => {
     expect(await fetchBaselineNames(routedLlm({ baseline: { wrong: 1 } }), { prompt: "p" })).toEqual([]);
     expect(await startBaseline(routedLlm({ baseline: new Error("boom") }), qloo, { prompt: "p" })).toEqual([]);
@@ -246,10 +256,13 @@ describe("generateBrief", () => {
     const down = await gen(routes({ baseline: new Error("x") }));
     expect(down.result.ok).toBe(true);
     expect(down.result.proof).toBeUndefined();
-    expect(down.events.some((e) => e.type === "stage" && e.stage === "proof" && e.detail === "unavailable")).toBe(true);
+    // A missing proof always says why, in words the brief page can show.
+    const reason = (events: typeof down.events) => events.flatMap((e) => (e.type === "stage" && e.stage === "proof" && e.detail?.startsWith("unavailable") ? [e.detail] : []));
+    expect(reason(down.events)).toEqual(["unavailable: the plain-language answer to compare against could not be fetched (the model did not return picks in time)"]);
     const slow = await gen(routes({ baseline: () => new Promise(() => {}) }), { proofTimeoutMs: 20 });
     expect(slow.result.ok).toBe(true);
     expect(slow.result.proof).toBeUndefined();
+    expect(reason(slow.events)).toEqual(["unavailable: the comparison did not finish in time (Qloo or the model was slow)"]);
   });
 
   it("does not start the baseline LLM call when the run stops to ask the user", async () => {

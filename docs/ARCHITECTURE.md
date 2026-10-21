@@ -2,7 +2,7 @@
 
 One Next.js app (App Router, TypeScript, Node runtime). The browser posts a request, the server runs a hybrid pipeline and streams progress and results back as Server-Sent Events.
 
-Core rule: **the LLM translates, Qloo decides.** The LLM turns text into Qloo queries and Qloo results into prose. It never supplies a recommendation. Everything it writes must cite evidence ids from a ledger of real Qloo results, and a pure validator removes anything that does not.
+Core rule: **the LLM translates, Qloo decides.** The LLM turns text into Qloo queries and Qloo results into prose. Qloo chooses every artist, place, brand, hotspot and style tag in a brief. The LLM writes the names of the colours, the captions, the playlist direction, the menu wording and the copy lines around that evidence; it does not choose entities. Everything it writes must cite evidence ids from a ledger of real Qloo results, a pure validator removes anything that does not, and a menu or merch idea may only use words that appear in the Qloo tags or names in the evidence (so "Post-Punk Pepperoni Pizza" is removed, "Pizza" is kept, with the tags it comes from).
 
 ## Pipeline
 
@@ -34,10 +34,10 @@ flowchart TD
 
     S2 -. once resolved .-> BL[Baseline - plain LLM, fast chain, no Qloo data<br/>artists, places, brands]
     BL --> P
-    B --> P[6. Taste Proof<br/>/search resolves baseline, insights with<br/>filter.results.entities scores both lists]
+    B --> P[6. Taste Proof<br/>/search across all entity types verifies the baseline<br/>(name, type, city), insights with<br/>filter.results.entities scores the verified picks]
     P --> PE[proof event]
 
-    B --> UI[UI: brief, why-chips, grounding score]
+    B --> UI[UI: brief, why-chips, citation coverage, Monday list]
     PE --> UI
     UI -->|like / dislike / lock| RF[POST /api/brief/refine<br/>verify signatures, re-walk touched sections only,<br/>exclusions + liked signals,<br/>merge, same validator, re-run proof]
     RF --> UI
@@ -63,13 +63,15 @@ The baseline LLM call starts as soon as the seeds have resolved (a run that stop
 
 | Section | Qloo calls |
 |---|---|
-| audience | `/v2/insights` movie (8), tv_show (6), `urn:demographics` |
-| sound | `/v2/insights` artist (10), then `/v2/trending` for the top 3 artists |
-| pairings | `/v2/insights` brand (10); cuisine tags of the top places |
+| audience | `/v2/insights` movie (8), tv_show (6) with `signal.location.query` = the city, `urn:demographics` |
+| sound | `/v2/insights` artist (10) with `signal.location.query` = the city, then `/v2/trending` for the top 3 artists |
+| pairings | `/v2/insights` brand (10) with `signal.location.query`, kept to consumer and hospitality brands by their Qloo tags (media, agency, school, NGO and app brands are set aside unless the request is about them); cuisine tags of the top places |
 | aesthetic | `/v2/insights` place in the city (10); `urn:tag` analysis of the top 5 places, filtered to decor and ambience tag types |
-| where | `/v2/insights` `urn:heatmap` in the city; coordinate-only hotspots get a neighbourhood name via reverse geocoding (live mode only) |
+| where | `/v2/insights` `urn:heatmap` in the city. Qloo's heatmap is not limited to the city ("New York" ranks Rochester and Buffalo first), so only cells within a per-city radius of the city centre are kept (`cityCentre.ts`: 12 to 25 km, from a built-in table or a Nominatim lookup). Each candidate gets a neighbourhood name from the addresses of the nearest reference places, else reverse geocoding; cells at airports or on industrial land (where OpenStreetMap says so) and cells nothing can name are dropped, so a brief never shows raw coordinates |
 
 Place-based sections run only when a city is known.
+
+**Local picks.** verified live 2026-10-21: `signal.location.query` weights a taste signal toward the people of a place. For an Indore indie-folk audience the same artist query returned Kings of Leon and The Black Keys without it, and Prateek Kuhad and The Local Train with it. Artist, brand, film and TV queries carry it whenever a city is known, the evidence record keeps it (`signal_location`), and the UI marks those picks "local". Places use `filter.location.query` instead. Where Qloo scores every result about the same (tag-only queries saturate near 0.97 to 1.00), the UI says "Qloo scores all of these about the same, so the order is not a ranking".
 
 ## Palette derivation
 
@@ -270,7 +272,8 @@ e2e/                              Playwright flows: brief, refine, share, compar
 | Dropped items lower the score | Hiding failures would make the score meaningless. |
 | Critic limited to a fixed menu of strategies | The model can improve thin coverage but cannot invent queries; off-menu or repeated follow-ups are discarded. Capped at 2 rounds. |
 | Ask when a name is ambiguous | A wrong guess at the seed poisons every downstream call. A one-click question is cheaper. Showcases and smoke runs auto-pick instead. |
-| Taste Proof uses `filter.results.entities` | Qloo scores a supplied shortlist, so both lists are judged by the same function on the same signals. Unfound picks are reported, not scored as zero. |
+| Taste Proof verifies, then scores | A name is searched across all entity types (a venue may be a brand, an author a person), compared after removing accents, "The", punctuation and descriptors like "Cafe", and judged against the city for places. The result is one of verified, wrong type, other city or not in Qloo's data; none of them says "invented", because Qloo's catalogue is not the world. Only verified picks are scored with `filter.results.entities`, and the averages are a sanity check, not a claim: Qloo normalizes affinity within each query. |
+| A missing proof says why | The proof stage reports its reason (no baseline answer, scoring too slow, an error) and the page shows it. Showcases try the proof a second time before they are served without one. |
 | Fast and main LLM chains, spread over the Groq models | Each call type has its own ordered chain: `LLM_CHAIN_FAST` for the short calls (seeds, critic, Taste Proof baseline), `LLM_CHAIN_MAIN` for the brief synthesis. Groq answers the short calls in 0.4 to 1 s and the synthesis in 5 to 6 s, where Gemini's free tier needs 9 to 21 s and 13 to 16 s, so Groq leads both chains and Gemini is the deeper fallback. Because every Groq model has its own minute budget, the short calls start on the small models (gpt-oss-20b, qwen3.8-27b) and gpt-oss-120b is kept for the synthesis, with a token budget steering around a model that is nearly spent (see "Load handling"). The baseline is a plain LLM either way: speed does not change its role as the opponent, but a smaller model writes it. |
 | Palette derived in code, named by the model | A palette every brief shares ("Bone Linen, Clay Terracotta, Deep Teal, Warm Grey") is a model default, not evidence. Code maps the brief's own decor, ambience, genre and cuisine tags to colour families with a documented table, weights them, and picks values with a stable hash, so the colours differ with the evidence, repeat for the same evidence, and each carries its tags and evidence ids. The model keeps the part it is good at (names), and a refine run needs no model call for colours. |
 | Token budget and reply caps | Per-model minute budgets are the real capacity limit of a free-tier demo. Tracking them (headers and usage) lets the cascade choose a model that has room instead of paying a failed 429 per brief, and lets the UI say "high demand" when nothing has room. |

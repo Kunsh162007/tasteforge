@@ -12,13 +12,13 @@ const spotifyUrl = (name: string) => `https://open.spotify.com/search/${encodeUR
 function GroundingBadge({ score, model }: { score: number; model?: string }) {
   const value = Math.round(score * 100);
   return (
-    <div className="grounding" role="img" aria-label={`Grounding score ${value} percent`}>
+    <div className="grounding" role="img" aria-label={`Citation coverage ${value} percent`}>
       <span className="grounding__num" aria-hidden="true">
         {value}
         <small>%</small>
       </span>
       <span className="grounding__cap" aria-hidden="true">
-        of lines grounded in Qloo evidence
+        of lines cite a Qloo record
         {model ? (
           <span className="grounding__model" title="The language model that wrote this brief">
             written by {model.replace(/^[a-z]+:/, "")}
@@ -72,6 +72,7 @@ function BriefNav({ brief, hasProof }: { brief: Brief; hasProof: boolean }) {
     ...(brief.whereTheyAre ? [{ href: "#where", label: "Where" }] : []),
     { href: "#messaging", label: "Voice" },
     ...(hasProof ? [{ href: "#proof", label: "Taste proof" }] : []),
+    { href: "#monday", label: "Monday list" },
   ];
   return (
     <nav className="brief__nav" aria-label="In this brief">
@@ -194,7 +195,8 @@ export function BriefView({ brief, dropped, hasProof = false }: { brief: Brief; 
 
       <DroppedNote dropped={dropped} />
       <p className="brief__colophon">
-        Prepared with TasteForge from Qloo taste-graph evidence. Every line in this brief traces to a Qloo record; lines without one were removed.
+        Prepared with TasteForge from Qloo taste-graph evidence. Qloo chose every artist, place, brand and style tag in this brief; a language model wrote the
+        colour names, captions and copy lines around them. Every line cites a Qloo record, and lines without one were removed.
       </p>
     </article>
   );

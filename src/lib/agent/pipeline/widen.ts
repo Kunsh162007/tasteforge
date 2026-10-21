@@ -43,8 +43,8 @@ function placeVariants(s: Signals, city: string): Variant[] {
   ];
 }
 
-function mediaVariants(kind: "artist" | "brand", s: Signals): Variant[] {
-  const base = { type: kind, take: WIDE_TAKE };
+function mediaVariants(kind: "artist" | "brand", s: Signals, city: string | undefined): Variant[] {
+  const base = { type: kind, take: WIDE_TAKE, ...(city ? { signal_location: city } : {}) };
   const own = signalArgsFor(kind, s);
   const tagsOnly = signalArgsFor(kind, { entityIds: [], tagIds: s.tagIds });
   const taste = signalArgsFor("brand", { entityIds: [], tagIds: s.tagIds.filter((t) => !venueTagIds([t]).length) });
@@ -59,12 +59,13 @@ function mediaVariants(kind: "artist" | "brand", s: Signals): Variant[] {
 const sameArgs = (a: Variant, b: Variant): boolean => JSON.stringify(a.args) === JSON.stringify(b.args);
 
 async function runVariant(ctx: PipelineCtx, v: Variant): Promise<readonly EvidenceEntity[]> {
-  const outcome = await executeTool({ name: "qloo_insights", args: { ...v.args } }, { qloo: ctx.qloo, ledger: EMPTY_LEDGER, now: ctx.now });
+  const outcome = await executeTool({ name: "qloo_insights", args: { ...v.args } }, { qloo: ctx.qloo, ledger: EMPTY_LEDGER, now: ctx.now, brandScope: ctx.brandScope });
   return outcome.evidence?.entities ? [...outcome.evidence.entities].sort(byAffinityThenId) : [];
 }
 
 function widenedDraft(kind: EntityKind, city: string | undefined, labels: readonly string[], added: readonly EvidenceEntity[]): EvidenceDraft {
-  const params = stringParams({ type: kind, ...(kind === "place" && city ? { location: city } : {}), widened: labels.join("; ") });
+  const where = city ? (kind === "place" ? { location: city } : { signal_location: city }) : {};
+  const params = stringParams({ type: kind, ...where, widened: labels.join("; ") });
   if (added.length === 0) return { endpoint: "/v2/insights", params, summary: "No results. The broader queries found nothing new." };
   const top = added.slice(0, 5).map((e) => e.name).join(", ");
   return { endpoint: "/v2/insights", params, summary: `${added.length} results; top: ${top}`, entities: compactEntities(added) };
@@ -73,9 +74,9 @@ function widenedDraft(kind: EntityKind, city: string | undefined, labels: readon
 /** Runs the broader queries for one kind in parallel and records what they add as a single evidence record. */
 async function widenEntities(ctx: PipelineCtx, kind: EntityKind, s: Signals, city: string | undefined): Promise<void> {
   if (kind === "place" && !city) return;
-  const all = kind === "place" ? placeVariants(s, city as string) : mediaVariants(kind, s);
+  const all = kind === "place" ? placeVariants(s, city as string) : mediaVariants(kind, s, city);
   const variants = all.filter((v, i) => all.findIndex((o) => sameArgs(o, v)) === i);
-  const call = { name: "qloo_insights", args: { type: kind, ...(kind === "place" ? { location: city } : {}), widened: variants.map((v) => v.label).join("; ") } };
+  const call = { name: "qloo_insights", args: { type: kind, ...(city ? (kind === "place" ? { location: city } : { signal_location: city }) : {}), widened: variants.map((v) => v.label).join("; ") } };
   await recordDraft(ctx, SECTION_OF[kind], call, async () => {
     const answers = await Promise.allSettled(variants.map((v) => runVariant(ctx, v)));
     const have = new Set(ledgerEntities(ctx.box.ledger, kind).map((x) => x.entity.id));

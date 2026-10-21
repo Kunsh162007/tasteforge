@@ -1,9 +1,12 @@
+import { lookupCityCentre } from "@/lib/geo/forward";
 import type { ReverseGeocoder } from "@/lib/geo/nominatim";
 import type { QlooClient } from "@/lib/qloo";
 import type { AgentEvent, SectionKey } from "../events";
+import type { BrandScope } from "../brandScope";
+import { createCentreResolver, type CentreResolver } from "../cityCentre";
 import { addEvidence, byAffinityThenId, EMPTY_LEDGER, type Evidence, type EvidenceDraft, type Ledger } from "../ledger";
 import { executeTool } from "../tools";
-import { withEntities } from "../summaries";
+import { isUnnamedArea, withEntities, withHeatmapEntities } from "../summaries";
 import { withPlaceFacts, type PlaceFacts } from "./placeFacts";
 import { createGuard, keepAboveMedian, scrubEntities, type Guard } from "./guard";
 
@@ -39,6 +42,10 @@ export type PipelineCtx = {
   readonly now?: () => Date;
   /** Names heatmap hotspots Qloo returned as bare coordinates. Absent in mock mode. */
   readonly geocode?: ReverseGeocoder;
+  /** Brand pairings: consumer and hospitality brands only, unless the request is about media or education. */
+  readonly brandScope: BrandScope;
+  /** Centre and reach of the requested city, for the heatmap. */
+  readonly centreOf: CentreResolver;
   readonly box: { ledger: Ledger };
   readonly stats: Map<SectionKey, StatAcc>;
   readonly counter: { n: number };
@@ -56,10 +63,13 @@ export type PipelineCtx = {
   readonly run: { closed: boolean };
 };
 
-export function createCtx(o: Pick<PipelineCtx, "qloo" | "emit" | "now" | "geocode">): PipelineCtx {
+export function createCtx(o: Pick<PipelineCtx, "qloo" | "emit" | "now" | "geocode"> & { readonly brandScope?: BrandScope; readonly centreOf?: CentreResolver }): PipelineCtx {
   const facts = new Map<string, PlaceFacts>();
   return {
     ...o,
+    brandScope: o.brandScope ?? "consumer",
+    // A geocoder exists only for live data; mock runs rely on the built-in table of cities.
+    centreOf: o.centreOf ?? createCentreResolver(o.geocode ? lookupCityCentre : undefined),
     qloo: withPlaceFacts(o.qloo, facts),
     facts,
     box: { ledger: EMPTY_LEDGER },
@@ -185,7 +195,8 @@ export function viaTool(
   opts: { readonly optional?: boolean } = {},
 ): Promise<Evidence | undefined> {
   const work = recordDraft(ctx, section, { name, args }, async () => {
-    const outcome = await executeTool({ name, args }, { qloo: ctx.qloo, ledger: EMPTY_LEDGER, now: ctx.now });
+    const centre = name === "qloo_heatmap" && typeof args.location === "string" ? await ctx.centreOf(args.location) : undefined;
+    const outcome = await executeTool({ name, args }, { qloo: ctx.qloo, ledger: EMPTY_LEDGER, now: ctx.now, brandScope: ctx.brandScope, ...(centre ? { centre } : {}) });
     if (outcome.isError || !outcome.evidence) {
       if (outcome.cause !== undefined) throw outcome.cause;
       const parsed = JSON.parse(outcome.content) as { error?: string };
@@ -221,6 +232,7 @@ export async function raceTimeout(work: Promise<unknown>, ms: number): Promise<"
  */
 export async function closeRun(ctx: PipelineCtx, optionalWaitMs: number): Promise<number> {
   if (ctx.optional.length > 0) await raceTimeout(Promise.allSettled(ctx.optional), optionalWaitMs);
+  withoutUnnamedHotspots(ctx);
   ctx.run.closed = true;
   let skipped = 0;
   for (const [id, call] of ctx.pending) {
@@ -237,4 +249,14 @@ export async function closeRun(ctx: PipelineCtx, optionalWaitMs: number): Promis
   }
   ctx.pending.clear();
   return skipped;
+}
+
+/** A hotspot that never got a neighbourhood name is not shown (its placeholder is raw coordinates). Runs once, as the run closes. */
+function withoutUnnamedHotspots(ctx: PipelineCtx): void {
+  ctx.box.ledger = {
+    records: ctx.box.ledger.records.map((r) => {
+      if (!r.endpoint.includes("heatmap") || !r.entities?.some((e) => isUnnamedArea(e.name))) return r;
+      return withHeatmapEntities(r, r.entities.filter((e) => !isUnnamedArea(e.name)));
+    }),
+  };
 }

@@ -16,7 +16,7 @@ const sans = Hanken_Grotesk({
   display: "swap",
 });
 
-const DESCRIPTION = "Cultural briefs for creators and small businesses, grounded in Qloo's taste graph.";
+const DESCRIPTION = "A brief for your café, with receipts: who your crowd is, what they play and where they gather, every line backed by a Qloo record.";
 
 /** Absolute base for OpenGraph image URLs: explicit site URL, then the host's own variables, then localhost. */
 function siteUrl(): URL {

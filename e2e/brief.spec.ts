@@ -17,13 +17,16 @@ test("submit -> brief -> evidence drawer -> taste proof -> map -> refine", async
   // A why-chip opens the evidence drawer with the Qloo call behind the item.
   await page.getByRole("button", { name: /^why/i }).first().click();
   await expect(page.getByText("Evidence from Qloo")).toBeVisible();
+  // The drawer asks the question in plain words first; the raw Qloo query is one click away.
+  await expect(page.getByRole("heading", { level: 3, name: /liked by|Which Qloo|Which .* tags|Where in|Age and gender/ }).first()).toBeVisible();
+  await page.getByText("The raw Qloo query").first().click();
   await expect(page.getByText("/v2/insights").first()).toBeVisible();
   await page.getByRole("button", { name: "Close" }).click();
 
   // Taste Proof compares a plain LLM against the Qloo-grounded picks.
   await expect(page.getByRole("heading", { name: /taste proof/i })).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("average affinity").first()).toBeVisible();
-  await expect(page.getByText(/not found in Qloo/i).first()).toBeVisible();
+  await expect(page.getByText(/couldn't verify|not in Qloo's data/i).first()).toBeVisible();
 
   // "Where they are" names neighbourhoods (no raw coordinates) and shows them on a map.
   await expect(page.getByText("Vijay Nagar").first()).toBeVisible();
@@ -48,7 +51,7 @@ test("submit -> brief -> evidence drawer -> taste proof -> map -> refine", async
 
 test("home leads with finished briefs, and one click opens one", async ({ page }) => {
   await page.goto("/");
-  await expect(page.getByRole("heading", { level: 1, name: /know who you are making it for/i })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: /a brief for your caf., with receipts/i })).toBeVisible();
   await expect(page.getByRole("region", { name: "Start with a finished brief" })).toBeVisible();
   // The compose form stays available as the secondary path.
   await expect(page.getByRole("form", { name: "Or brief your own project" })).toBeVisible();
@@ -57,4 +60,9 @@ test("home leads with finished briefs, and one click opens one", async ({ page }
   await expect(page.getByRole("article")).toBeVisible();
   await expect(page.getByRole("navigation", { name: "In this brief" })).toBeVisible();
   await expect(page.getByRole("heading", { name: /taste proof/i })).toBeVisible();
+  // The brief ends in something to do on Monday: playlist links, palette codes, rooms to visit, flyers.
+  const monday = page.getByRole("region", { name: "Your Monday list" });
+  await expect(monday).toBeVisible();
+  await expect(monday.getByRole("link").first()).toHaveAttribute("href", /open\.spotify\.com\/search\//);
+  await expect(monday.getByRole("button", { name: "Download the list" })).toBeVisible();
 });

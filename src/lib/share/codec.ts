@@ -37,6 +37,8 @@ const PickSchema = z.object({
   evidence: z.array(z.string().regex(/^ev_\d{1,4}$/)).max(8).optional(),
   address: z.string().max(200).optional(),
   local: z.boolean().optional(),
+  status: z.enum(["verified", "wrong_type", "other_city", "unverified"]).optional(),
+  matchedKind: z.string().max(40).optional(),
 });
 
 const ProofSchema = z.object({

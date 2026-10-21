@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createQlooClient } from "@/lib/qloo";
 import { NO_EXCLUSIONS } from "../refine/plan";
 import { createCtx } from "./context";
-import { walkSections } from "./walk";
+import { artistSignal, hasArtistSeed, walkSections } from "./walk";
 
 const qloo = createQlooClient({ mode: "mock", baseUrl: "https://hackathon.api.qloo.com" });
 const signals = { entityIds: ["MOCK-ARTIST-1"], tagIds: [], entityNames: ["Velvet Static"], tagNames: [] };
@@ -80,7 +80,9 @@ describe("walkSections hotspot names", () => {
   ];
   const cells = [
     { geohash: "tsr1", latitude: 22.751, longitude: 75.889, affinity: 0.9 },
-    { geohash: "tsr2", latitude: 22.6, longitude: 75.7, affinity: 0.7 },
+    { geohash: "tsr2", latitude: 22.78, longitude: 75.95, affinity: 0.7 },
+    { geohash: "far1", latitude: 23.26, longitude: 77.41, affinity: 1 }, // Bhopal, 190 km away
+    { geohash: "air1", latitude: 22.72, longitude: 75.8, affinity: 0.95 }, // an airport, per the geocoder below
   ];
   const withAddresses = {
     ...qloo,
@@ -88,26 +90,56 @@ describe("walkSections hotspot names", () => {
     heatmap: async () => ({ data: cells }),
   };
 
-  it("names a hotspot from the addresses of the places around it, without asking a geocoder", async () => {
-    let geocoderCalls = 0;
-    const geocode = async () => {
-      geocoderCalls += 1;
-      return "Somewhere Else";
-    };
+  const area = (name: string, residential = true) => ({ name, residential });
+
+  it("names a hotspot from the addresses of the places around it and falls back to the geocoder for the rest", async () => {
+    const geocode = async (lat: number) => (lat === 22.72 ? area("Indore Airport", false) : area("Somewhere Else"));
     const ctx = createCtx({ qloo: withAddresses, emit: () => undefined, geocode });
     await walkSections(ctx, ["aesthetic", "where"], signals, "Indore", NO_EXCLUSIONS);
     const heat = ctx.box.ledger.records.find((r) => r.endpoint.includes("heatmap"));
     const names = (heat?.entities ?? []).map((e) => e.name);
     expect(names).toContain("Vijay Nagar");
-    // the cell with no place near it falls back to the geocoder
     expect(names).toContain("Somewhere Else");
-    expect(geocoderCalls).toBe(1);
   });
 
-  it("keeps the placeholder for a hotspot nothing names (no geocoder in mock mode)", async () => {
+  it("drops cells outside the city's reach and cells the geocoder places at an airport", async () => {
+    const geocode = async (lat: number) => (lat === 22.72 ? area("Indore Airport", false) : area("Somewhere Else"));
+    const ctx = createCtx({ qloo: withAddresses, emit: () => undefined, geocode });
+    await walkSections(ctx, ["aesthetic", "where"], signals, "Indore", NO_EXCLUSIONS);
+    const heat = ctx.box.ledger.records.find((r) => r.endpoint.includes("heatmap"));
+    const ids = (heat?.entities ?? []).map((e) => e.id);
+    expect(ids).not.toContain("far1");
+    expect(ids).not.toContain("air1");
+    expect(heat?.summary).toContain("heatmap hotspots in Indore");
+  });
+
+  it("never shows a hotspot nothing names (no geocoder in mock mode): no raw coordinates", async () => {
     const ctx = createCtx({ qloo: withAddresses, emit: () => undefined });
     await walkSections(ctx, ["aesthetic", "where"], signals, "Indore", NO_EXCLUSIONS);
     const heat = ctx.box.ledger.records.find((r) => r.endpoint.includes("heatmap"));
-    expect((heat?.entities ?? []).some((e) => e.name.startsWith("Area near"))).toBe(true);
+    const names = (heat?.entities ?? []).map((e) => e.name);
+    expect(names.some((n) => n.startsWith("Area near"))).toBe(false);
+    expect(names).toContain("Vijay Nagar");
+  });
+});
+
+describe("localised artist signal", () => {
+  const sig = { entityIds: ["B1"], tagIds: ["urn:tag:genre:music:indie_rock"], entityNames: ["Muji"], tagNames: ["Indie - Rock"] };
+  const withSearch = (types: string) => {
+    const ctx = createCtx({ qloo, emit: () => undefined });
+    ctx.box.ledger = { records: [{ id: "ev_1", endpoint: "/search", params: { types }, summary: "s", entities: [{ id: "B1", name: "Muji" }] }] };
+    return ctx;
+  };
+
+  it("uses the music tags alone in a city when the seeds are brands, so the city's own acts come back", () => {
+    const ctx = withSearch("brand");
+    expect(hasArtistSeed(ctx, sig)).toBe(false);
+    expect(artistSignal(ctx, sig, "Indore")).toEqual({ tag_ids: ["urn:tag:genre:music:indie_rock"] });
+  });
+
+  it("keeps the seed entities when one of them is an artist, when there is no city, or when the seeds were preset", () => {
+    expect(artistSignal(withSearch("artist"), sig, "Indore")).toEqual({ entity_ids: ["B1"], tag_ids: ["urn:tag:genre:music:indie_rock"] });
+    expect(artistSignal(withSearch("brand"), sig, undefined)).toEqual({ entity_ids: ["B1"], tag_ids: ["urn:tag:genre:music:indie_rock"] });
+    expect(hasArtistSeed(createCtx({ qloo, emit: () => undefined }), sig)).toBe(true);
   });
 });

@@ -1,7 +1,8 @@
 "use client";
 
 import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
-import type { Evidence } from "@/ui/contract";
+import type { BriefSignals, Evidence } from "@/ui/contract";
+import { buildNameBook } from "@/ui/evidenceText";
 import { EvidenceDrawer } from "./EvidenceDrawer";
 
 type OpenFn = (ids: readonly string[], title: string, trigger: HTMLElement | null) => void;
@@ -25,11 +26,15 @@ type DrawerState = { ids: readonly string[]; title: string } | null;
 
 export function EvidenceProvider({
   evidence,
+  signals,
   children,
 }: {
   evidence: Readonly<Record<string, Evidence>>;
+  /** The taste signals behind the brief, so the drawer can name the seeds it was asked about. */
+  signals?: BriefSignals;
   children: ReactNode;
 }) {
+  const book = useMemo(() => buildNameBook(Object.values(evidence), signals), [evidence, signals]);
   const [drawer, setDrawer] = useState<DrawerState>(null);
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -48,7 +53,7 @@ export function EvidenceProvider({
     <EvidenceCtx.Provider value={value}>
       <EvidenceDataCtx.Provider value={evidence}>
         {children}
-        {drawer ? <EvidenceDrawer ids={drawer.ids} title={drawer.title} evidence={evidence} onClose={close} /> : null}
+        {drawer ? <EvidenceDrawer ids={drawer.ids} title={drawer.title} evidence={evidence} book={book} onClose={close} /> : null}
       </EvidenceDataCtx.Provider>
     </EvidenceCtx.Provider>
   );

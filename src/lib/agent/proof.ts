@@ -7,6 +7,9 @@ import type { Ledger } from "./ledger";
 import type { Signals } from "./pipeline/resolve";
 import { tagsFor } from "./pipeline/routing";
 import { stripNulls } from "./pipeline/seeds";
+import { cityAnchor, type GeoPoint } from "./pipeline/guard";
+import { isUnverified } from "./proofStats";
+import { verifyPick, type VerifyStatus } from "./verify";
 import { logWarn } from "@/lib/log";
 import { DATA_RULE, fence } from "./fence";
 import { toToolParameters } from "./toolSchemas";
@@ -25,6 +28,10 @@ export type PickRef = {
   readonly evidence?: readonly string[];
   readonly address?: string;
   readonly local?: boolean;
+  /** How the name held up in Qloo (baseline picks only; TasteForge's own picks are Qloo results). */
+  readonly status?: VerifyStatus;
+  /** For a wrong-type status: the type Qloo lists a same-named entity under. */
+  readonly matchedKind?: string;
 };
 
 const KINDS: readonly PickKind[] = ["artist", "place", "brand"];
@@ -43,6 +50,17 @@ const BaselineSchema = z.object({
   brands: names("About 4 real brands."),
 });
 
+/**
+ * What a reply may look like once it is in: a model that lists twelve places or a long venue name is still answering, so
+ * it is cut down to size (see cleanNames) instead of failing the whole Taste Proof, which is how a missing proof once happened.
+ */
+const MAX_REPLY_NAMES = 40;
+const LenientSchema = z.object({
+  artists: z.array(z.string()).max(MAX_REPLY_NAMES).default([]),
+  places: z.array(z.string()).max(MAX_REPLY_NAMES).default([]),
+  brands: z.array(z.string()).max(MAX_REPLY_NAMES).default([]),
+});
+
 const BASELINE_SYSTEM = `You are a helpful assistant with no access to any data source. Recommend real, specific names that fit the audience described. Reply with JSON only: artists (6), places (6 real venues, in the given city when one is given) and brands (4). Always give the full number of each. ${DATA_RULE}`;
 
 const norm = (s: string): string =>
@@ -56,7 +74,7 @@ function cleanNames(list: readonly string[], limit: number): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of list) {
-    const name = raw.trim();
+    const name = raw.trim().slice(0, NAME_MAX_CHARS);
     if (name === "" || seen.has(norm(name))) continue;
     seen.add(norm(name));
     out.push(name);
@@ -77,25 +95,30 @@ export async function fetchBaselineNames(llm: LlmProvider, r: BaselineRequest): 
     tier: "main",
     route: "main",
   });
-  const parsed = BaselineSchema.safeParse(stripNulls(raw));
+  const parsed = LenientSchema.safeParse(stripNulls(raw));
   if (!parsed.success) return [];
   const { artists, places, brands } = parsed.data;
   const byKind: Record<PickKind, string[]> = { artist: artists, place: places, brand: brands };
   return KINDS.flatMap((kind) => cleanNames(byKind[kind], BASELINE_COUNTS[kind]).map((name) => ({ name, kind })));
 }
 
-/** Resolves each baseline name to a Qloo entity via search; names Qloo cannot find stay without an id. */
-export async function resolveBaseline(qloo: QlooClient, picks: readonly PickRef[]): Promise<PickRef[]> {
+export type ResolveContext = { readonly city?: string; readonly anchor?: GeoPoint };
+
+/**
+ * Checks each baseline name against Qloo across every entity type, with a place judged against the city
+ * (see verify.ts). A name Qloo can only find under another type or in another city is labelled so, not "not found".
+ * Only a pick listed with the right type gets an id and can be scored.
+ */
+export async function resolveBaseline(qloo: QlooClient, picks: readonly PickRef[], ctx: ResolveContext = {}): Promise<PickRef[]> {
   return Promise.all(
     picks.map(async (p): Promise<PickRef> => {
-      try {
-        const r = await qloo.search({ query: p.name, types: [URNS[p.kind]], take: 1 });
-        const hit = r.data[0];
-        return hit ? { ...p, qlooId: hit.id } : p;
-      } catch (e) {
-        logWarn("taste proof: baseline lookup failed", e);
-        return p;
-      }
+      const v = await verifyPick(qloo, p.kind, p.name, ctx);
+      return {
+        ...p,
+        status: v.status,
+        ...(v.qlooId ? { qlooId: v.qlooId } : {}),
+        ...(v.matchedKind ? { matchedKind: v.matchedKind } : {}),
+      };
     }),
   );
 }
@@ -208,6 +231,8 @@ function scorePick(p: PickRef, scores: ReadonlyMap<string, number>): ScoredPick 
     ...(p.evidence ? { evidence: p.evidence } : {}),
     ...(p.address ? { address: p.address } : {}),
     ...(p.local !== undefined ? { local: p.local } : {}),
+    ...(p.status ? { status: p.status } : {}),
+    ...(p.matchedKind ? { matchedKind: p.matchedKind } : {}),
   };
   if (!p.qlooId) return { name: p.name, kind: p.kind, affinity: null, ...traced };
   // An id Qloo did not score has no affinity to report: null, never a made-up 0.
@@ -257,21 +282,22 @@ export async function scoreProof(i: ProofInput): Promise<TasteProof | undefined>
     tasteforge,
     baselineAvg: average(baseline),
     tasteforgeAvg: average(tasteforge),
-    baselineNotFound: baseline.filter((p) => p.affinity === null).length,
+    baselineNotFound: baseline.filter(isUnverified).length,
     ...(i.city ? { city: i.city } : {}),
   };
 }
 
 /**
  * Starts the baseline in the background; never rejects (a failed baseline simply means no proof).
- * The LLM call starts at once; `gate` holds back the Qloo lookups (about 16 searches) so they do not queue
- * in front of the graph walk's own calls.
+ * The LLM call starts at once; `gate` holds back the Qloo lookups (about 16 searches) so they do not queue in front of the
+ * graph walk's own calls, and hands over the walk's ledger, whose places say where the city is.
  */
-export function startBaseline(llm: LlmProvider, qloo: QlooClient, r: BaselineRequest, gate?: Promise<unknown>): Promise<PickRef[]> {
+export function startBaseline(llm: LlmProvider, qloo: QlooClient, r: BaselineRequest, gate?: Promise<Ledger | undefined>): Promise<PickRef[]> {
   return fetchBaselineNames(llm, r)
     .then(async (picks) => {
-      if (gate) await gate;
-      return resolveBaseline(qloo, picks);
+      const ledger = gate ? await gate : undefined;
+      const anchor = ledger ? cityAnchor(ledger) : undefined;
+      return resolveBaseline(qloo, picks, { ...(r.city ? { city: r.city } : {}), ...(anchor ? { anchor } : {}) });
     })
     .catch((e: unknown) => {
       logWarn("taste proof: baseline unavailable", e);

@@ -15,9 +15,9 @@ export default function OpenGraphImage() {
       <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", justifyContent: "space-between", background: PAPER, color: INK, padding: 72, border: `12px solid ${INK}` }}>
         <div style={{ display: "flex", fontSize: 34, fontWeight: 700, letterSpacing: 4, textTransform: "uppercase", color: ACCENT }}>TasteForge</div>
         <div style={{ display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", fontSize: 92, fontWeight: 800, lineHeight: 1, letterSpacing: -3 }}>Know who you are</div>
-          <div style={{ display: "flex", fontSize: 92, fontWeight: 800, lineHeight: 1, letterSpacing: -3 }}>making it for.</div>
-          <div style={{ display: "flex", marginTop: 28, fontSize: 34, color: "#4a4d57" }}>Cultural briefs grounded in Qloo&apos;s taste graph, with the evidence for every line.</div>
+          <div style={{ display: "flex", fontSize: 92, fontWeight: 800, lineHeight: 1, letterSpacing: -3 }}>A brief for your</div>
+          <div style={{ display: "flex", fontSize: 92, fontWeight: 800, lineHeight: 1, letterSpacing: -3 }}>café, with receipts.</div>
+          <div style={{ display: "flex", marginTop: 28, fontSize: 34, color: "#4a4d57" }}>Who your crowd is, what they play, where they gather. Every line backed by a Qloo record.</div>
         </div>
         <div style={{ display: "flex" }}>
           {SWATCHES.map((hex) => (

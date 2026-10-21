@@ -84,7 +84,9 @@ const KIND_OF: Readonly<Record<FollowUp["type"], SignalKind>> = { artist: "artis
 function followUpArgs(f: FollowUp, signals: Signals, city: string | undefined): Record<string, unknown> | undefined {
   const sig = signalArgsFor(KIND_OF[f.type], signals);
   const base = { type: f.type, take: f.strategy === "more_results" ? WIDE_TAKE : DEFAULT_TAKE };
-  const withCity = f.type === "place" && city && f.strategy !== "drop_location" ? { location: city } : {};
+  // Places are filtered to the city; artists, brands and media are weighted toward it (signal.location.query), so a follow-up stays local.
+  const reach = city && f.strategy !== "drop_location" ? (f.type === "place" ? { location: city } : { signal_location: city }) : {};
+  const withCity = reach;
   if (f.strategy === "tags_only") return sig.tag_ids ? { ...base, ...withCity, tag_ids: sig.tag_ids } : undefined;
   if (f.strategy === "entities_only") return sig.entity_ids ? { ...base, ...withCity, entity_ids: sig.entity_ids } : undefined;
   return { ...base, ...withCity, ...sig };

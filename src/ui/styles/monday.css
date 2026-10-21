@@ -1,0 +1,121 @@
+.monday {
+  margin-top: 3.5rem;
+  padding: clamp(1.25rem, 3vw, 2.25rem);
+  border: 2px solid var(--ink);
+  background: var(--paper-raised);
+  box-shadow: var(--lift);
+}
+.monday__kicker {
+  font-size: var(--step--1);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent);
+  font-weight: 700;
+}
+.monday__title {
+  font-family: var(--font-serif);
+  font-size: var(--step-2);
+  line-height: 1.05;
+  margin: 0.2rem 0 0.4rem;
+}
+.monday__sub {
+  color: var(--ink-soft);
+  max-width: var(--measure);
+}
+.monday__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+  margin-top: 1rem;
+}
+.monday__notice {
+  min-height: 1.4em;
+  margin-top: 0.5rem;
+  font-size: var(--step--1);
+  color: var(--ok);
+}
+.monday__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1.25rem 2rem;
+  margin-top: 1rem;
+}
+.monday__block {
+  border-top: 1px solid var(--rule);
+  padding-top: 0.75rem;
+}
+.monday__h {
+  font-size: var(--step--1);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+}
+.monday__hint {
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+  margin-bottom: 0.3rem;
+}
+.monday__list {
+  display: grid;
+  gap: 0.3rem;
+  padding-left: 0;
+  list-style-position: inside;
+}
+ul.monday__list {
+  list-style: none;
+}
+ul.monday__list li {
+  display: grid;
+}
+.monday__where {
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}
+.monday__chips {
+  list-style: none;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+.monday__chips li {
+  display: grid;
+  grid-template-columns: 1.6rem 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+.monday__chip {
+  width: 1.6rem;
+  height: 1.6rem;
+  border: 1px solid var(--ink);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.monday__chips code {
+  font-size: var(--step--1);
+  color: var(--ink-soft);
+}
+.monday__noprint {
+  margin-top: 0.5rem;
+}
+
+@media print {
+  .monday {
+    break-before: page;
+    box-shadow: none;
+    border: 1.5px solid #000;
+  }
+  .monday__actions,
+  .monday__notice,
+  .monday__noprint {
+    display: none !important;
+  }
+  body[data-print-only="monday"] .masthead,
+  body[data-print-only="monday"] .stage-area > :not(.monday) {
+    display: none !important;
+  }
+  body[data-print-only="monday"] .monday {
+    break-before: auto;
+  }
+}

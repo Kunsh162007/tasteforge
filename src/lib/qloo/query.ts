@@ -93,6 +93,7 @@ export function insightsQuery(p: InsightsParams): string {
     "signal.interests.entities": p.entities,
     "signal.interests.tags": p.tags,
     "filter.location.query": p.locationQuery,
+    "signal.location.query": p.signalLocationQuery,
     "filter.tags": p.filterTags,
     "filter.exclude.tags": p.excludeTags,
     "filter.exclude.entities": p.excludeEntities,

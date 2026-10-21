@@ -30,7 +30,7 @@ Two entry points: **I know my audience** (you name artists, brands, tastes) and 
 What makes it different from a chat answer:
 
 - **Why-chips.** Every item has a "Why" button that opens the exact Qloo call (endpoint, parameters, returned entities and affinity scores) behind it.
-- **Grounding score.** A server-computed percentage of submitted items that cite real evidence. Ungrounded items are removed and listed, not shown.
+- **Citation coverage** (`groundingScore` in the code). A server-computed percentage of submitted items that cite a real Qloo record. Uncited items are removed and listed, not shown. It checks that a citation exists, not that every caption is true.
 - **Taste Proof.** Qloo itself scores a plain LLM's picks and TasteForge's picks against the same audience. See below.
 - **Refine loop.** Like, dislike or lock any item. Only the sections you touched are re-walked, with disliked entities excluded and liked ones added as signals.
 - **Showcase briefs.** Six example briefs (Indore, London, New York, Brooklyn, Chicago, Paris; cafe, ceramics, pop-ups, boutique, record-store bar) are built on the server one at a time right after it boots, so the first visit is instant even when free LLM tiers are throttled. `npm run warm` waits until they are all ready.
@@ -40,7 +40,7 @@ What makes it different from a chat answer:
 
 ## How it uses Qloo
 
-Qloo is the source of every recommendation. Nothing in a brief comes from the LLM's memory.
+Qloo chooses every artist, place, brand, hotspot and style tag in a brief. A language model writes the colour names, captions, listening direction, menu wording and copy lines around that evidence; code removes anything that cites no Qloo record, and a menu idea may only use words that appear in Qloo's tags or names. Artist, brand, film and TV queries carry `signal.location.query` for the requested city, so picks are weighted toward local people (the UI marks them "local").
 
 | Qloo endpoint | Used for | Where |
 |---|---|---|
@@ -74,17 +74,17 @@ Every Qloo result becomes an immutable record with an id (`ev_1`, `ev_2`, ...) h
 Answers "is a TasteForge brief safer to use than a plain LLM answer?" with Qloo's data rather than our say-so. The panel leads with what a plain answer gets wrong and ends with the fit comparison, because the fit gap on live data is modest:
 
 1. As soon as the seeds are resolved (not earlier, so a run that stops to ask "which did you mean?" spends nothing), ask the LLM with no Qloo data for about 6 artists, 6 places and 4 brands for the same audience (the baseline).
-2. Resolve the baseline names to Qloo entities via `/search`. Names Qloo cannot find are counted as "not found".
+2. Verify each baseline name against Qloo via `/search` across all entity types, comparing names after removing accents, "The", punctuation and descriptors like "Cafe", and judging places against the city. The result is verified, wrong type (Qloo lists an author, brand or person by that name), in another city, or not in Qloo's data for the city. None of these means "invented": Qloo's catalogue is not the world.
 3. For each kind, call `/v2/insights` with `filter.results.entities` set to the shortlist (baseline plus TasteForge picks) and the same audience signals, so Qloo scores both lists identically.
-4. Show, in this order: (a) picks Qloo could not find (likely invented or non-local), (b) local verification: how many TasteForge places Qloo located in the requested city with an address on file, against how many plain-LLM places Qloo knows at all, and (c) the average affinity comparison, as a secondary metric. Every TasteForge pick has a `trace` button that opens the evidence record that surfaced it. Averages cover only picks Qloo found; "not found" is never averaged in as zero. The user's own seeds are left out of both lists.
+4. Show, in this order: (a) picks Qloo could not verify in the city, with the breakdown above, (b) local verification: how many TasteForge places Qloo located in the requested city with an address on file, against how many plain-LLM places Qloo verified, and (c) the average affinity, as a sanity check only (Qloo normalizes affinity within each query, so it is not compared as a claim). Every TasteForge pick has a `trace` button that opens the evidence record that surfaced it. Averages cover only picks Qloo found; unverified picks are never averaged in as zero. The user's own seeds are left out of both lists.
 
 Proof failure never fails the brief. Honest framing: the score measures fit with the audience's Qloo taste signals, not quality in general.
 
-**Fabrication benchmark** (20 prompts, 5 cities, live Qloo, 2026-10-20; method and caveats in docs/BENCHMARK.md, reproduce with `npm run benchmark`): a plain LLM's place picks were missing from Qloo or in another city **56% of the time** (38 not found and 26 in another city, of 115; four runs gave 43% to 59%), and 29% of all its picks could not be found at all. TasteForge: 0% of 120, because it can only return what Qloo returned. Fit with the audience is about the same (places 0.78 baseline, 0.79 TasteForge), so the claim is verifiability, not a fit gap. Honest limits: Qloo's catalogue is not the world, so "not found" means "cannot be verified", and repeat runs were unstable at first (17% pick overlap); after deterministic settings and seed caching TasteForge repeats about 80% of its picks (3 prompts x 2 runs, indicative).
+**Verification benchmark** (20 prompts, 5 cities, live Qloo, 2026-10-21; method, classification and caveats in docs/BENCHMARK.md, reproduce with `npm run benchmark`): Qloo could not verify **30% of a plain LLM's 276 picks** in the requested city (26% of its places, 30 of 114). We checked every name across all Qloo entity types with accent, "The" and suffix-tolerant matching, and hand-classified the 84 misses: 10 likely invented (no evidence they exist), 54 real but missing from Qloo or listed under another type (authors and photographers named as artists, chains listed as places), 15 with a same-named place only in another city, 5 unclassified. An earlier, stricter matcher had reported 56% of places and 29% of picks as "not found"; most of that was the matcher and Qloo's coverage, not the model. TasteForge: 0% of 312, because it can only return what Qloo returned. Affinity is only a sanity check, since Qloo normalizes it within each query. Honest limits: "couldn't be verified" is not "fake", the invented/real split is a judgement from general knowledge, one baseline model (Groq gpt-oss-120b class) and one day. Repeat runs were unstable at first (17% pick overlap); after deterministic settings and seed caching TasteForge repeats about 80% of its picks (3 prompts x 2 runs, indicative).
 
-What it claims, and what it does not: every pick is verified and traceable to a Qloo result, its fit is never lower than the plain answer's in our runs, and it catches picks that do not exist in Qloo or are not local. It does not claim a large fit advantage.
+What it claims, and what it does not: every TasteForge pick is a Qloo result and traceable to its record, and picks a plain answer names that Qloo cannot verify in the city are shown as such. It does not claim a fit advantage, and it does not claim that unverified picks are fake.
 
-Result: live Qloo data, real LLM, 2026-10-20 (Indore cafe, London ceramic artist, New York A24/Radiohead/Vietnamese date night). Plain-LLM average affinity 0.86, 0.86 and 0.87 against TasteForge 0.93 on all three. Qloo could not find 2, 2 and 0 of the plain answers' 12 to 14 picks (for example "Muskaan" and "O2 Cafe Hill" for Indore), while every TasteForge pick is a Qloo result and every TasteForge place was located by Qloo in its city. Numbers from a local mock run come from synthetic fixtures and mean nothing.
+Numbers from a local mock run come from synthetic fixtures and mean nothing.
 
 ## Why this matters
 
@@ -170,7 +170,7 @@ Keys are read from the environment only. `.env*` is git-ignored except `.env.exa
 | `npm run lint` | ESLint |
 | `npm run test:e2e` | Playwright end-to-end flow (submit, brief, evidence drawer, Taste Proof, map, refine) |
 | `npm run smoke` | Real LLM from your env plus mock Qloo; prints stages, LLM call count, duration, grounding and proof averages |
-| `npm run benchmark` | Fabrication benchmark: 20 prompts across 5 cities, plain LLM against TasteForge, checked against live Qloo; writes `docs/BENCHMARK.md`. Needs `QLOO_MODE=live` and an LLM key. |
+| `npm run benchmark` | Verification benchmark: 20 prompts across 5 cities, plain LLM against TasteForge, checked against live Qloo; writes `docs/BENCHMARK.md`. Needs `QLOO_MODE=live` and an LLM key. |
 | `npm run warm` | Waits until the deployed showcase (default https://tasteforge-fa98.onrender.com, or `-- --url=...`) has all six briefs ready; also wakes a sleeping Render instance. See the judging-day checklist. |
 | `npm run loadtest -- --url=http://localhost:3000 --n=4` | Fires N concurrent briefs at a running server and prints time to brief, total time, the model that wrote each brief, "high demand" waits and errors. Uses real LLM and Qloo calls on the server. |
 | `npm run prompt:size` | Tokens each LLM call type would send (live Qloo, scripted LLM, no LLM quota). |
@@ -207,7 +207,7 @@ The showcase cache and rate limiter are per server instance (in memory, with a g
 ## Known limits
 
 - **No item-level products.** Qloo has no SKU or product catalogue. Pairings are brands plus menu or merch ideas inferred from cuisine tags, not "buy this exact item".
-- **Affinity measures fit with taste signals.** Taste Proof shows that picks are real, local and at least as close to the audience's Qloo signals as an ungrounded LLM list (the fit gap is modest on live data). It does not measure sales, quality or novelty.
+- **Affinity measures fit with taste signals.** Taste Proof shows which picks Qloo can verify in the city. The affinity numbers are a sanity check, not a comparison, and Qloo scores many tag-only results identically (the UI says so). It does not measure sales, quality or novelty.
 - **Result hygiene.** In code, before the writer sees Qloo results: the user's own seeds are removed (by id and normalized name), places more than 50 km from the city's result cluster are dropped (with a same-city widening query if that leaves too few), film and TV picks below the batch median affinity are omitted, and style tags are ranked by how specific they are to the top places versus the city's ordinary places.
 - **Coverage varies by city.** Places, decor/ambience tags and heatmaps depend on Qloo's coverage. Thin sections get a lower confidence label and the critic tries fallbacks (drop the city, tags only).
 - **Free-tier LLM limits.** Gemini and Groq free tiers are rate-limited (Groq: 8000 tokens a minute per model; one brief uses about 4,300 input tokens plus replies, so about 1.5 briefs a minute fit on gpt-oss-120b). The app counts each model's tokens per minute, passes over a model that is nearly spent, cools down any model that hits its quota or an outage, and paces showcase generation. When nothing has room it queues the brief for up to 25 s and shows "High demand: your brief is next, about N seconds". Local load test, 3 briefs at once: all answered in 28 to 41 s, written by gpt-oss-120b, qwen3.8-27b and Gemini 2.5 Flash with no failed attempts.

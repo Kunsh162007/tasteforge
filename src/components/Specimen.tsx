@@ -46,7 +46,7 @@ export function Specimen({ brief, city, real }: { brief: Brief; city?: string; r
         </dl>
         <p className="specimen__stamp">
           {Math.round(brief.groundingScore * 100)}
-          <small>%</small> grounded in Qloo evidence
+          <small>%</small> of lines cite a Qloo record
         </p>
       </div>
     </figure>

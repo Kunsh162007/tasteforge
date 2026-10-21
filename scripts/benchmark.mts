@@ -1,8 +1,11 @@
 /**
- * Fabrication benchmark (docs/BENCHMARK.md). For 20 prompts across 5 cities it asks a plain LLM (the Taste Proof
- * baseline: no Qloo data) and TasteForge for picks, then checks every pick against Qloo: does it exist, is a
- * place in the requested city, and how well does it fit the audience's taste signals. Then it repeats three
- * prompts twice and reports how much the picks overlap between runs.
+ * Verification benchmark (docs/BENCHMARK.md). For 20 prompts across 5 cities it asks a plain LLM (the Taste Proof
+ * baseline: no Qloo data) and TasteForge for picks, then checks every pick against Qloo across all entity types: verified,
+ * wrong type, only in another city, or not in Qloo's data. Unverified baseline picks are classified from the hand audit in
+ * scripts/benchmark-audit.json. Then it repeats three prompts twice and reports how much the picks overlap between runs.
+ *
+ * The plain-LLM names and each prompt's resolved taste signals are cached in .cache/benchmark (git-ignored), so a re-run
+ * spends no LLM calls on them; --fresh ignores the cache. The critic and the writer are scripted in the 20-prompt set.
  *
  *   npm run benchmark -- [--only=4] [--no-consistency] [--out=<scratch json>] [--write]
  *   npm run benchmark -- --consistency-only [--no-seed-cache] [--consistency=id,id] [--show] [--write]
@@ -18,23 +21,15 @@
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { generateBrief, tasteforgePicks, scoreProof, type Brief, type GenerateResult, type Item, type PickRef } from "../src/lib/agent";
-import {
-  BENCH_KINDS,
-  nameVariants,
-  overlap,
-  resolvePick,
-  summarizeByKind,
-  type BenchKind,
-  type KindSummary,
-  type PickOutcome,
-  type SearchHit,
-} from "../src/lib/agent/benchmark";
-import { medianPoint, normalizeName } from "../src/lib/agent/pipeline/guard";
+import { BENCH_KINDS, outcomeOf, overlap, summarizeByKind, type Audit, type BenchKind, type KindSummary, type PickOutcome } from "../src/lib/agent/benchmark";
+import { cityAnchor, normalizeName } from "../src/lib/agent/pipeline/guard";
+import type { Signals } from "../src/lib/agent/pipeline/resolve";
 import { fetchBaselineNames } from "../src/lib/agent/proof";
+import { verifyPick } from "../src/lib/agent/verify";
 import { createLlm, createScriptedLlm, loadLlmConfig, type LlmProvider } from "../src/lib/llm";
 import { createQlooClient, loadQlooConfig, type QlooClient } from "../src/lib/qloo";
-import { ENTITY_TYPES, type EntityTypeUrn } from "../src/lib/qloo/types";
-import { patchConsistency, renderBenchmark, type BenchRun, type Consistency } from "../src/lib/agent/benchmarkReport";
+import { extractConsistency, patchConsistency, renderBenchmark, type BenchRun, type Consistency } from "../src/lib/agent/benchmarkReport";
+import { mkdirSync } from "node:fs";
 
 if (existsSync(".env.local")) process.loadEnvFile(".env.local");
 if (process.argv.includes("--no-seed-cache")) process.env.SEED_CACHE = "0";
@@ -72,69 +67,95 @@ const PROMPTS: readonly Prompt[] = [
 ];
 const CONSISTENCY_IDS = (arg("consistency")?.split(",") ?? ["indore-cafe", "london-studio", "brooklyn-shop"]) as readonly string[];
 const MIN_GAP_MS = 30_000;
-const SEARCH_TAKE = 5;
 const QLOO_TIMEOUT_MS = 45_000;
 const QLOO_HEDGE_MS = 15_000;
-const URNS: Record<BenchKind, EntityTypeUrn> = { artist: ENTITY_TYPES.artist, place: ENTITY_TYPES.place, brand: ENTITY_TYPES.brand };
+const CACHE_DIR = ".cache/benchmark";
+const AUDIT_PATH = "scripts/benchmark-audit.json";
+
+type CachedRun = { baselineNames?: PickRef[]; signals?: Signals };
+const cachePath = (id: string): string => `${CACHE_DIR}/${id}.json`;
+function readCache(id: string): CachedRun {
+  if (flag("fresh")) return {};
+  try {
+    return JSON.parse(readFileSync(cachePath(id), "utf8")) as CachedRun;
+  } catch {
+    return {};
+  }
+}
+function writeCache(id: string, entry: CachedRun): void {
+  mkdirSync(CACHE_DIR, { recursive: true });
+  writeFileSync(cachePath(id), JSON.stringify(entry));
+}
+/** With --no-consistency the earlier repeat-run section stays in the document as it was (those six real-synthesis runs are not repeated). */
+function keptFrom(path: string): { keptConsistency?: { section: string; bullet: string } } {
+  const kept = extractConsistency(readFileSync(path, "utf8"));
+  return kept ? { keptConsistency: kept } : {};
+}
+function readAudit(): Audit {
+  try {
+    return JSON.parse(readFileSync(AUDIT_PATH, "utf8")) as Audit;
+  } catch {
+    return {};
+  }
+}
 
 let llmCalls = 0;
 
 function makeLlm(realSynthesis: boolean): LlmProvider {
   const cfg = loadLlmConfig();
   // The fast chain answers every call type here: it is the quickest and spares the Gemini free-tier quota.
-  const real = createLlm({ ...cfg, chain: cfg.fastChain }, { cache: false, onCall: () => (llmCalls += 1) });
+  const real = createLlm({ ...cfg, chain: cfg.fastChain }, { cache: false, onCall: () => void (llmCalls += 1) });
   if (realSynthesis) return real;
   const scripted = createScriptedLlm();
-  return { name: real.name, chatJson: (req) => (req.system.startsWith("You are TasteForge") ? scripted.chatJson(req) : real.chatJson(req)) };
+  const offline = (system: string): boolean => system.startsWith("You are TasteForge") || system.startsWith("You are the critic");
+  // The 20-prompt set measures picks from the evidence, not the writer: a thin section is filled from the ledger without a repair call.
+  const answer = (req: Parameters<LlmProvider["chatJson"]>[0]) =>
+    req.system.startsWith("You repair one section") ? Promise.resolve({ items: [] }) : offline(req.system) ? scripted.chatJson(req) : real.chatJson(req);
+  return { name: real.name, chatJson: realSynthesis ? real.chatJson : answer };
 }
 
-async function hitsFor(qloo: QlooClient, kind: BenchKind, name: string): Promise<SearchHit[]> {
-  const search = async (query: string): Promise<SearchHit[]> => {
-    try {
-      const r = await qloo.search({ query, types: [URNS[kind]], take: SEARCH_TAKE });
-      return r.data.map((e) => ({ id: e.id, name: e.name, lat: e.location?.latitude, lon: e.location?.longitude }));
-    } catch {
-      return [];
-    }
-  };
-  // Also search without a ", City" tail: the baseline is given every chance to be found.
-  const lists = await Promise.all(nameVariants(name).map(search));
-  return lists.flat();
+/** The plain-LLM answer, asked again (twice at most) when a reply is unusable; an empty answer is never cached or counted. */
+async function baselineFor(def: Prompt, llm: LlmProvider): Promise<PickRef[]> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const names = await fetchBaselineNames(llm, { prompt: def.prompt, city: def.city }).catch(() => [] as PickRef[]);
+    if (names.length > 0) return names;
+    await sleep(12_000);
+  }
+  return [];
 }
 
 async function oneRun(def: Prompt, qloo: QlooClient, llm: LlmProvider, realSynthesis: boolean): Promise<BenchRun & { readonly generate: GenerateResult }> {
   const t0 = Date.now();
-  const baselineNames = fetchBaselineNames(llm, { prompt: def.prompt, city: def.city }).catch(() => [] as PickRef[]);
-  const generate = await generateBrief({ prompt: def.prompt, mode: def.mode, city: def.city, llm, qloo, allowNeedsInput: false, withProof: false });
+  const cached = realSynthesis ? {} : readCache(def.id);
+  const baselineNames: Promise<PickRef[]> = cached.baselineNames?.length ? Promise.resolve(cached.baselineNames) : baselineFor(def, llm);
+  const generate = await generateBrief({
+    prompt: def.prompt, mode: def.mode, city: def.city, llm, qloo, allowNeedsInput: false, withProof: false,
+    ...(cached.signals ? { presetSignals: cached.signals } : {}),
+  });
   const base = await baselineNames;
+  if (base.length === 0) throw new Error(`no plain-LLM answer for ${def.id}`);
   if (!generate.ok || !generate.brief || !generate.signals) throw new Error(`pipeline failed for ${def.id}`);
+  if (!realSynthesis) writeCache(def.id, { baselineNames: base, signals: generate.signals });
   const signals = generate.signals;
-  const places = generate.ledger.records.flatMap((r) => r.entities ?? []).filter((e) => e.lat !== undefined && e.lon !== undefined);
-  const anchor = medianPoint(generate.ledger.records.filter((r) => r.params.type === "place").flatMap((r) => r.entities ?? []), 3);
+  const anchor = cityAnchor(generate.ledger);
   // The user's own seeds are input, not recommendations: leave them out of both lists, like the app's proof does.
   const seedIds = new Set(signals.entityIds);
   const seedNames = new Set(signals.entityNames.map(normalizeName));
   const notSeed = (p: PickRef): boolean => !(p.qlooId && seedIds.has(p.qlooId)) && !seedNames.has(normalizeName(p.name));
 
   const resolved = await Promise.all(
-    base.filter(notSeed).map(async (p) => ({ p, r: resolvePick(p.kind, p.name, await hitsFor(qloo, p.kind, p.name), anchor) })),
+    base.filter(notSeed).map(async (p) => ({ p, v: await verifyPick(qloo, p.kind, p.name, { city: def.city, ...(anchor ? { anchor } : {}) }) })),
   );
-  const baselineRefs: PickRef[] = resolved.map(({ p, r }) => (r.found && r.qlooId ? { ...p, qlooId: r.qlooId } : p));
+  const baselineRefs: PickRef[] = resolved.map(({ p, v }) => ({ ...p, status: v.status, ...(v.qlooId && v.status === "verified" ? { qlooId: v.qlooId } : {}) }));
   const mine = tasteforgePicks(realSynthesis ? generate.brief : ledgerBrief(generate), generate.ledger).filter(notSeed);
   const proof = await scoreProof({ qloo, signals, baseline: baselineRefs, tasteforge: mine, city: def.city });
   const fit = (list: readonly { name: string; kind: string; affinity: number | null }[] | undefined, name: string, kind: string): number | null =>
     list?.find((x) => x.name === name && x.kind === kind)?.affinity ?? null;
 
-  const baseline: PickOutcome[] = resolved.map(({ p, r }) => ({
-    kind: p.kind, name: p.name, found: r.found, ...(r.qlooId ? { qlooId: r.qlooId } : {}), ...(r.offCity !== undefined ? { offCity: r.offCity } : {}),
-    affinity: fit(proof?.baseline, p.name, p.kind),
-  }));
-  const coords = new Map(places.map((e) => [e.id, e]));
-  const tasteforge: PickOutcome[] = mine.map((p) => {
-    const e = p.kind === "place" && p.qlooId ? coords.get(p.qlooId) : undefined;
-    const offCity = e && anchor && e.lat !== undefined && e.lon !== undefined ? resolvePick("place", p.name, [{ id: e.id, name: e.name, lat: e.lat, lon: e.lon }], anchor).offCity : undefined;
-    return { kind: p.kind, name: p.name, found: Boolean(p.qlooId), ...(p.qlooId ? { qlooId: p.qlooId } : {}), ...(offCity !== undefined ? { offCity } : {}), affinity: fit(proof?.tasteforge, p.name, p.kind) };
-  });
+  const baseline: PickOutcome[] = resolved.map(({ p, v }) => outcomeOf(p.kind, p.name, v, fit(proof?.baseline, p.name, p.kind)));
+  const tasteforge: PickOutcome[] = mine.map((p) =>
+    outcomeOf(p.kind, p.name, { status: "verified", ...(p.qlooId ? { qlooId: p.qlooId } : {}) }, fit(proof?.tasteforge, p.name, p.kind)),
+  );
   return { id: def.id, city: def.city, type: def.type, seconds: (Date.now() - t0) / 1000, grounding: generate.brief.groundingScore, baseline, tasteforge, generate };
 }
 
@@ -187,7 +208,9 @@ async function consistency(defs: readonly Prompt[], qloo: QlooClient, gapMs: num
 }
 
 function printKind(label: string, s: Record<BenchKind, KindSummary>): void {
-  for (const k of BENCH_KINDS) out(`  ${label} ${k}: n=${s[k].picks} notFound=${s[k].notFound} offCity=${s[k].offCity}/${s[k].located} fit=${s[k].meanFit?.toFixed(2) ?? "-"}`);
+  for (const k of BENCH_KINDS) {
+    out(`  ${label} ${k}: n=${s[k].picks} verified=${s[k].verified} unverified=${s[k].unverified} wrongType=${s[k].wrongType} otherCity=${s[k].otherCity} fit=${s[k].meanFit?.toFixed(2) ?? "-"}`);
+  }
 }
 
 function consistencyNotes(): string {
@@ -218,9 +241,12 @@ async function main(): Promise<void> {
   const defs = PROMPTS.slice(0, only);
   // --reuse=<earlier --out json> keeps its 20 runs and redoes only the consistency runs.
   const reuse = arg("reuse");
-  const runs: BenchRun[] = reuse ? (JSON.parse(readFileSync(reuse, "utf8")) as { runs: BenchRun[] }).runs : [];
+  const earlier = reuse ? (JSON.parse(readFileSync(reuse, "utf8")) as { runs: BenchRun[]; llmCalls?: number }) : undefined;
+  const reusedCalls = earlier?.llmCalls;
+  const runs: BenchRun[] = earlier ? earlier.runs : [];
   for (const [i, def] of reuse ? [] : defs.entries()) {
     const started = Date.now();
+    const callsBefore = llmCalls;
     try {
       const r = await oneRun(def, qloo, makeLlm(false), false);
       runs.push(r);
@@ -228,8 +254,9 @@ async function main(): Promise<void> {
     } catch (e) {
       out(`[${i + 1}/${defs.length}] ${def.id} FAILED: ${e instanceof Error ? e.message : "error"}`);
     }
-    const wait = MIN_GAP_MS - (Date.now() - started);
-    if (wait > 0) await sleep(wait); // keeps the per-minute token budget of the free LLM tiers
+    // The pause protects the free tiers' per-minute token budgets, so a run that made no LLM call (cached) needs none.
+    const wait = llmCalls > callsBefore ? MIN_GAP_MS - (Date.now() - started) : 0;
+    if (wait > 0) await sleep(wait);
   }
   const base = runs.flatMap((r) => r.baseline);
   const mine = runs.flatMap((r) => r.tasteforge);
@@ -244,7 +271,7 @@ async function main(): Promise<void> {
     const cfg = loadLlmConfig();
     return cfg.fastChain.map((e) => `${e.provider}:${e.model}`);
   })();
-  const md = renderBenchmark({ runs, consistency: cons, prompts, models, date: new Date().toISOString().slice(0, 10), llmCalls });
+  const md = renderBenchmark({ runs, consistency: cons, prompts, models, date: new Date().toISOString().slice(0, 10), llmCalls: reusedCalls ?? llmCalls, audit: readAudit(), ...(flag("no-consistency") && existsSync("docs/BENCHMARK.md") ? keptFrom("docs/BENCHMARK.md") : {}) });
   if (flag("write")) writeFileSync("docs/BENCHMARK.md", md);
   out(`LLM calls: ${llmCalls}`);
 }

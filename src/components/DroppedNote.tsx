@@ -3,6 +3,7 @@ import type { DroppedItem } from "@/ui/contract";
 const REASON: Record<DroppedItem["reason"], string> = {
   no_evidence: "no evidence cited",
   unknown_evidence: "cited evidence not found",
+  not_in_evidence: "words that appear nowhere in the Qloo tags",
 };
 
 export function DroppedNote({ dropped }: { dropped: readonly DroppedItem[] }) {

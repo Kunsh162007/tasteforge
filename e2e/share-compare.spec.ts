@@ -40,6 +40,9 @@ test("share link opens a read-only brief with evidence and proof", async ({ page
   await expect(shared.getByRole("button", { name: /^Dislike/ })).toHaveCount(0);
   await shared.getByRole("button", { name: /^why/i }).first().click();
   await expect(shared.getByText("Evidence from Qloo")).toBeVisible();
+  // The drawer asks the question in plain words first; the raw Qloo query is one click away.
+  await expect(shared.getByRole("heading", { level: 3, name: /liked by|Which Qloo|Which .* tags|Where in|Age and gender/ }).first()).toBeVisible();
+  await shared.getByText("The raw Qloo query").first().click();
   await expect(shared.getByText("/v2/insights").first()).toBeVisible();
 });
 

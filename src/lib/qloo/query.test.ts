@@ -91,6 +91,13 @@ describe("insightsQuery", () => {
     });
   });
 
+  it("weights a taste signal toward a place with signal.location.query (verified live 2026-10-21)", () => {
+    const { params } = parse(insightsQuery({ type: ENTITY_TYPES.artist, entities: ["A1"], signalLocationQuery: "Indore" }));
+    expect(params["signal.location.query"]).toBe("Indore");
+    expect(params["filter.location.query"]).toBeUndefined();
+    expect(parse(insightsQuery({ type: ENTITY_TYPES.artist, entities: ["A1"] })).params["signal.location.query"]).toBeUndefined();
+  });
+
   it("omits unset optional params and keeps colons readable", () => {
     const q = insightsQuery({ type: ENTITY_TYPES.artist, entities: ["A1"] });
     expect(q).toBe("/v2/insights?filter.type=urn:entity:artist&signal.interests.entities=A1");

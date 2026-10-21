@@ -347,8 +347,8 @@ describe("hotspot naming", () => {
     ...mock,
     heatmap: async () => ({
       data: [
-        { geohash: "a", latitude: 22.75, longitude: 75.89, affinity: 0.9 },
-        { geohash: "b", latitude: 22.72, longitude: 75.88, affinity: 0.7 },
+        { geohash: "a", latitude: 40.71, longitude: -73.96, affinity: 0.9 },
+        { geohash: "b", latitude: 40.68, longitude: -73.95, affinity: 0.7 },
       ],
     }),
   };
@@ -357,21 +357,21 @@ describe("hotspot naming", () => {
     const seen: [number, number][] = [];
     const geocode = async (lat: number, lon: number) => {
       seen.push([lat, lon]);
-      return lat > 22.74 ? "Vijay Nagar" : undefined;
+      return lat > 40.7 ? { name: "Vijay Nagar", residential: true } : undefined;
     };
     const { result } = await run(goodRoutes(), { qloo: unnamedHeat, geocode });
     const heat = result.ledger.records.find((r) => r.summary.includes("heatmap hotspots"));
-    expect(heat?.entities?.map((e) => e.name)).toEqual(["Vijay Nagar", "Area near 22.720, 75.880"]);
+    // The second cell stays unnamed, so it is not shown: the brief never carries raw coordinates.
+    expect(heat?.entities?.map((e) => e.name)).toEqual(["Vijay Nagar"]);
     expect(heat?.summary).toContain("hottest: Vijay Nagar");
     expect(seen).toHaveLength(2);
   });
 
-  it("keeps placeholders without a geocoder and skips cells that already have names", async () => {
+  it("hides unnamed hotspots when nothing can name them, and keeps cells that already have names", async () => {
     const { result } = await run(goodRoutes(), { qloo: unnamedHeat });
-    expect(result.ledger.records.find((r) => r.summary.includes("heatmap hotspots"))?.entities?.[0].name).toMatch(/^Area near/);
-    let calls = 0;
-    const { result: named } = await run(goodRoutes(), { geocode: async () => { calls += 1; return "x"; } });
-    expect(calls).toBe(0);
+    const heat = result.ledger.records.find((r) => r.endpoint.includes("heatmap"));
+    expect((heat?.entities ?? []).some((e) => e.name.startsWith("Area near"))).toBe(false);
+    const { result: named } = await run(goodRoutes(), { geocode: async () => ({ name: "x", residential: true }) });
     expect(named.ledger.records.find((r) => r.summary.includes("heatmap hotspots"))?.entities?.[0].name).toBe("Williamsburg");
   });
 });

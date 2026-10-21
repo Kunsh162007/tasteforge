@@ -5,6 +5,7 @@ import { useMemo, useSyncExternalStore } from "react";
 import { decodeShare, type SharePayload } from "@/lib/share/codec";
 import { BriefView } from "./BriefView";
 import { EvidenceProvider } from "./EvidenceContext";
+import { MondayList } from "./MondayList";
 import { PageShell } from "./PageShell";
 import { ShareVerification, useShareVerification } from "./ShareVerification";
 import { TasteProofPanel } from "./TasteProofPanel";
@@ -46,6 +47,7 @@ function Shared({ payload }: { payload: SharePayload }) {
       </aside>
       <BriefView brief={payload.brief} dropped={[]} hasProof={Boolean(payload.proof)} />
       <TasteProofPanel proof={payload.proof} pending={false} />
+      <MondayList brief={payload.brief} />
       <p className="shared-cta">
         <Link className="btn-primary" href="/">
           Build your own brief

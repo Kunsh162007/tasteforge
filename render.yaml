@@ -32,6 +32,8 @@ services:
         sync: false # strongly recommended: the first model in both chains
       - key: LEDGER_SECRET
         generateValue: true # signs evidence handed to the browser; keeps shared links verifiable across restarts
+      - key: SHOWCASE_ADMIN_TOKEN
+        generateValue: true # lets npm run warm -- --regenerate rebuild the showcase (copy it into WARM_TOKEN locally)
       - key: MAX_CONCURRENT_BRIEFS
         value: "4"
       - key: DAILY_LLM_BUDGET

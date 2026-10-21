@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AgentEvent, Brief, BriefMode, BriefSignals, DroppedItem, Evidence, GenerateResult, TasteProof } from "@/lib/agent";
 
@@ -22,6 +22,14 @@ export type ShowcaseDef = {
 
 export const SHOWCASES: readonly ShowcaseDef[] = [
   {
+    id: "record-bar-chicago",
+    title: "A record-store bar in Chicago",
+    prompt:
+      "We are opening a record-store bar in Chicago where people dig through vinyl over natural wine. Our crowd loves jazz, soul and post-punk.",
+    mode: "know_audience",
+    city: "Chicago",
+  },
+  {
     id: "cafe-indore",
     title: "A cafe for young professionals in Indore",
     prompt:
@@ -30,20 +38,20 @@ export const SHOWCASES: readonly ShowcaseDef[] = [
     city: "Indore",
   },
   {
-    id: "ceramic-artist",
-    title: "Finding the audience for handmade ceramics",
+    id: "wine-bar-nyc",
+    title: "A wine bar for A24, Radiohead and Vietnamese food lovers in New York",
     prompt:
-      "I am a ceramic artist making handmade, Japanese-inspired tableware. Find the audience that would love it and where to reach them.",
-    mode: "find_audience",
-    city: "London",
-  },
-  {
-    id: "couple-night-out",
-    title: "A couple who love A24, Radiohead and Vietnamese food",
-    prompt:
-      "We are a couple who love A24 films, Radiohead and Vietnamese food. Build the taste profile for a date-night pop-up that fits us.",
+      "We are opening a wine bar in New York for people who love A24 films, Radiohead and Vietnamese food. Build the taste profile for the room, the playlist and the menu.",
     mode: "know_audience",
     city: "New York",
+  },
+  {
+    id: "popup-paris",
+    title: "A three-week pop-up bakery in Paris",
+    prompt:
+      "I am running a three-week pop-up bakery in Paris for design-minded locals who love slow mornings, ceramics and film photography.",
+    mode: "know_audience",
+    city: "Paris",
   },
   {
     id: "boutique-brooklyn",
@@ -54,25 +62,17 @@ export const SHOWCASES: readonly ShowcaseDef[] = [
     city: "Brooklyn",
   },
   {
-    id: "record-bar-chicago",
-    title: "A record-store bar in Chicago",
+    id: "ceramic-artist",
+    title: "Finding the audience for handmade ceramics",
     prompt:
-      "We are opening a record-store bar in Chicago where people dig through vinyl over natural wine. Our crowd loves jazz, soul and post-punk.",
-    mode: "know_audience",
-    city: "Chicago",
-  },
-  {
-    id: "popup-paris",
-    title: "A three-week pop-up bakery in Paris",
-    prompt:
-      "I am running a three-week pop-up bakery in Paris for design-minded locals who love slow mornings, ceramics and film photography.",
-    mode: "know_audience",
-    city: "Paris",
+      "I am a ceramic artist making handmade, Japanese-inspired tableware. Find the audience that would love it and where to reach them.",
+    mode: "find_audience",
+    city: "London",
   },
 ];
 
 /** Bump when the result shape changes so stale disk entries are ignored. */
-const CACHE_VERSION = 3;
+const CACHE_VERSION = 6;
 /** First retry delay after a failure; doubles per attempt up to MAX_BACKOFF_MS. */
 export const BASE_BACKOFF_MS = 30_000;
 export const MAX_BACKOFF_MS = 5 * 60_000;
@@ -112,9 +112,14 @@ export type ShowcaseEntry = ShowcaseDef & {
 
 export type ShowcaseGenerate = (def: ShowcaseDef, onEvent: (e: AgentEvent) => void) => Promise<GenerateResult>;
 
+/** Runs the Taste Proof again for a finished brief that has none (it needs only the baseline call and Qloo, not the whole pipeline). */
+export type ShowcaseReprove = (def: ShowcaseDef, result: GenerateResult, onEvent: (e: AgentEvent) => void) => Promise<GenerateResult>;
+
 export type ShowcaseOptions = {
   readonly defs?: readonly ShowcaseDef[];
   readonly generate: ShowcaseGenerate;
+  /** Second chance for a brief whose Taste Proof came back empty: a showcase should not ship without one if it can be avoided. */
+  readonly reprove?: ShowcaseReprove;
   /** Disk cache directory; pass false to keep results in memory only. */
   readonly dir?: string | false;
   readonly now?: () => number;
@@ -127,6 +132,8 @@ export type ShowcaseOptions = {
 export type EnsureOptions = {
   /** Clear failure backoff and retry failed briefs now (still one at a time, still spaced). */
   readonly force?: boolean;
+  /** Throw away every cached brief (memory and disk) and build them all again, e.g. after the pipeline changed. */
+  readonly regenerate?: boolean;
 };
 
 export type ShowcaseService = {
@@ -157,6 +164,10 @@ function writeDisk(dir: string, def: ShowcaseDef, result: ShowcaseResult, source
   } catch {
     // The disk cache is a convenience; the in-memory copy still serves requests.
   }
+}
+
+function removeDisk(dir: string, defs: readonly ShowcaseDef[]): void {
+  for (const def of defs) rmSync(join(dir, `${def.id}.json`), { force: true });
 }
 
 type Failure = { readonly message: string; readonly at: number; readonly attempts: number; readonly retryable: boolean };
@@ -196,13 +207,18 @@ export function createShowcaseService(o: ShowcaseOptions): ShowcaseService {
     let retryable = true;
     const previous = failures.get(def.id);
     try {
-      const r = await o.generate(def, (e) => {
+      const record = (e: AgentEvent): void => {
         if (TRAIL_TYPES.has(e.type)) events.push(e);
         if (e.type === "error") retryable = e.retryable;
-      });
+      };
+      let r = await o.generate(def, record);
       if (!r.ok || !r.brief) throw new Error(r.error ?? "The brief could not be built.");
+      // The proof is the headline feature: one more try before a brief goes out without it (the reason stays in the trail).
+      if (!r.proof && o.reprove) r = await o.reprove(def, r, record).catch(() => r);
+      const brief = r.brief;
+      if (!brief) throw new Error("The brief could not be built.");
       const result: ShowcaseResult = {
-        brief: r.brief,
+        brief,
         dropped: r.dropped,
         evidence: r.ledger.records,
         ...(r.proof ? { proof: r.proof } : {}),
@@ -280,6 +296,11 @@ export function createShowcaseService(o: ShowcaseOptions): ShowcaseService {
     },
     ensure(options = {}) {
       loadDisk();
+      if (options.regenerate && !running) {
+        results.clear();
+        failures.clear();
+        if (dir !== false) removeDisk(dir, defs);
+      }
       running ??= run(options.force === true).finally(() => {
         running = undefined;
         activeId = undefined;

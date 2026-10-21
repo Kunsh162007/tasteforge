@@ -42,6 +42,11 @@ export const InsightsArgs = z.object({
   entity_ids: entityIds.optional(),
   tag_ids: tagIds.optional(),
   location: z.string().max(80).optional().describe("City or neighbourhood, e.g. Brooklyn."),
+  signal_location: z
+    .string()
+    .max(80)
+    .optional()
+    .describe("City whose people the taste signal should be weighted toward, so artist, brand and media picks are local."),
   filter_tag_ids: tagIds.optional().describe("Hard filter: results must have all of these tags."),
   exclude_tag_ids: tagIds.optional(),
   exclude_entity_ids: entityIds.optional().describe("Entity ids that must not appear in the results."),

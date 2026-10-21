@@ -25,13 +25,13 @@ const okResult = (): GenerateResult => ({
 
 describe("showcase definitions", () => {
   it("has the six prompts, in six different cities with varied project types", () => {
-    expect(SHOWCASES.map((s) => s.id)).toEqual(["cafe-indore", "ceramic-artist", "couple-night-out", "boutique-brooklyn", "record-bar-chicago", "popup-paris"]);
+    expect(SHOWCASES.map((s) => s.id)).toEqual(["record-bar-chicago", "cafe-indore", "wine-bar-nyc", "popup-paris", "boutique-brooklyn", "ceramic-artist"]);
     expect(new Set(SHOWCASES.map((s) => s.city)).size).toBe(SHOWCASES.length);
     expect(new Set(SHOWCASES.map((s) => s.id)).size).toBe(SHOWCASES.length);
     expect(SHOWCASES.map((s) => s.city)).toEqual(expect.arrayContaining(["Brooklyn", "Chicago", "Paris"]));
     expect(SHOWCASES.some((s) => s.mode === "find_audience" && s.city === "Brooklyn")).toBe(true);
-    expect(SHOWCASES[0]).toMatchObject({ city: "Indore", mode: "know_audience" });
-    expect(SHOWCASES[1].mode).toBe("find_audience");
+    expect(SHOWCASES[0]).toMatchObject({ city: "Chicago", mode: "know_audience" });
+    expect(SHOWCASES[1]).toMatchObject({ city: "Indore", mode: "know_audience" });
     expect(SHOWCASES[2].prompt).toMatch(/A24.*Radiohead.*Vietnamese/);
   });
 });
@@ -51,11 +51,11 @@ describe("showcase service", () => {
     expect(service.list().map((e) => e.status)).toEqual(["generating", "queued"]);
     await run;
     const [first] = service.list();
-    expect(first).toMatchObject({ status: "ready", id: "cafe-indore", prompt: defs[0].prompt, mode: "know_audience" });
+    expect(first).toMatchObject({ status: "ready", id: "record-bar-chicago", prompt: defs[0].prompt, mode: "know_audience" });
     expect(first.proof?.tasteforgeAvg).toBe(0.8);
     expect(first.evidence).toHaveLength(1);
     expect(first.trail).toEqual([{ type: "stage", stage: "seeds", status: "start" }]);
-    expect(readdirSync(dir).sort()).toEqual(["cafe-indore.json", "ceramic-artist.json"]);
+    expect(readdirSync(dir).sort()).toEqual(["cafe-indore.json", "record-bar-chicago.json"]);
 
     // a fresh instance (server restart) serves from disk without generating
     const again = vi.fn<ShowcaseGenerate>();
@@ -166,12 +166,52 @@ describe("showcase service", () => {
   it("ignores stale or corrupt disk entries and survives an unwritable cache dir", async () => {
     const dir = tmp();
     writeFileSync(join(dir, "cafe-indore.json"), JSON.stringify({ signature: "old", result: {} }));
-    writeFileSync(join(dir, "ceramic-artist.json"), "not json");
+    writeFileSync(join(dir, "record-bar-chicago.json"), "not json");
     const generate = vi.fn<ShowcaseGenerate>(async () => okResult());
     const stale = createShowcaseService({ defs, generate, dir, ...noWait });
     expect(stale.list().map((e) => e.status)).toEqual(["queued", "queued"]);
     const blocked = createShowcaseService({ defs, generate, dir: join(dir, "cafe-indore.json", "sub"), ...noWait });
     await blocked.ensure();
     expect(blocked.list().every((e) => e.status === "ready")).toBe(true);
+  });
+
+  it("tries the Taste Proof once more when the first run came back without one", async () => {
+    const proof = { baseline: [], tasteforge: [], baselineAvg: 0.3, tasteforgeAvg: 0.8, baselineNotFound: 1 };
+    const reprove = vi.fn(async (_d: ShowcaseDef, r: GenerateResult, onEvent: (e: import("@/lib/agent").AgentEvent) => void) => {
+      onEvent({ type: "stage", stage: "proof", status: "done", detail: "1 of 5 plain picks unverified" });
+      return { ...r, proof };
+    });
+    const service = createShowcaseService({ defs: [defs[0]], generate: async () => okResult(), reprove, dir: false, ...noWait });
+    await service.ensure();
+    expect(reprove).toHaveBeenCalledTimes(1);
+    expect(service.list()[0].proof).toEqual(proof);
+    expect(service.list()[0].trail?.at(-1)).toMatchObject({ stage: "proof", detail: "1 of 5 plain picks unverified" });
+  });
+
+  it("does not call reprove when the proof is there, and keeps the brief when reprove fails", async () => {
+    const proof = { baseline: [], tasteforge: [], baselineAvg: null, tasteforgeAvg: null, baselineNotFound: 0 };
+    const reprove = vi.fn(async () => {
+      throw new Error("down");
+    });
+    const withProof = createShowcaseService({ defs: [defs[0]], generate: async () => ({ ...okResult(), proof }), reprove, dir: false, ...noWait });
+    await withProof.ensure();
+    expect(reprove).not.toHaveBeenCalled();
+    const without = createShowcaseService({ defs: [defs[0]], generate: async () => okResult(), reprove, dir: false, ...noWait });
+    await without.ensure();
+    expect(without.list()[0]).toMatchObject({ status: "ready" });
+    expect(without.list()[0].proof).toBeUndefined();
+  });
+
+  it("regenerate throws the cached briefs away (memory and disk) and builds them again", async () => {
+    const dir = tmp();
+    const generate = vi.fn<ShowcaseGenerate>(async () => okResult());
+    const service = createShowcaseService({ defs, generate, dir, ...noWait });
+    await service.ensure();
+    expect(generate).toHaveBeenCalledTimes(2);
+    await service.ensure();
+    expect(generate).toHaveBeenCalledTimes(2);
+    await service.ensure({ regenerate: true });
+    expect(generate).toHaveBeenCalledTimes(4);
+    expect(readdirSync(dir).sort()).toEqual(["cafe-indore.json", "record-bar-chicago.json"]);
   });
 });

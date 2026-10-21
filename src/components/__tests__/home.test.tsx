@@ -42,7 +42,7 @@ describe("ShowcaseGallery", () => {
 describe("Home", () => {
   it("sells the product, previews a brief and keeps the compose form as the secondary path", () => {
     render(<Home showcasePhase="settled" showcaseItems={[ready]} onOpenShowcase={() => {}} onRetryShowcase={() => {}} onSubmit={() => {}} />);
-    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/Know who you are making it for/);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toMatch(/A brief for your café, with receipts/);
     expect(screen.getByRole("link", { name: "Open a finished brief" }).getAttribute("href")).toBe("#showcase");
     expect(screen.getByRole("figure", { name: "Preview of a real brief" })).toBeTruthy();
     const form = screen.getByRole("form", { name: "Or brief your own project" });

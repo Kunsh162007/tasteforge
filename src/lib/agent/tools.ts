@@ -2,6 +2,8 @@ import type { z } from "zod";
 import type { QlooClient } from "@/lib/qloo";
 import type { ToolCall, ToolDefinition } from "@/lib/llm";
 import type { BriefDraft } from "./brief";
+import { consumerBrands, type BrandScope } from "./brandScope";
+import type { CityCentre } from "./cityCentre";
 import { addEvidence, toLlmView, type Evidence, type EvidenceDraft, type Ledger } from "./ledger";
 import {
   demographicsDraft,
@@ -33,6 +35,10 @@ export type ToolContext = {
   readonly qloo: QlooClient;
   readonly ledger: Ledger;
   readonly now?: () => Date;
+  /** Brand pairings: "consumer" (default) sets aside media, agency, school and app brands. */
+  readonly brandScope?: BrandScope;
+  /** Centre and reach of the city a heatmap is asked for; cells farther out are not hotspots of that city. */
+  readonly centre?: CityCentre;
 };
 
 export type ToolOutcome = {
@@ -52,7 +58,7 @@ type QlooTool<S extends z.ZodType> = {
   readonly name: string;
   readonly description: string;
   readonly schema: S;
-  run(args: z.infer<S>, qloo: QlooClient, now: Date): Promise<EvidenceDraft>;
+  run(args: z.infer<S>, qloo: QlooClient, now: Date, ctx: ToolContext): Promise<EvidenceDraft>;
 };
 
 /** Flattens tool args to the string map stored on evidence (arrays comma-joined). */
@@ -95,12 +101,13 @@ const QLOO_TOOLS = [
     description:
       "Recommend entities of one type that this taste signal (entity_ids and/or tag_ids) over-indexes on. Use location for places.",
     schema: InsightsArgs,
-    async run(a, qloo) {
+    async run(a, qloo, _now, ctx) {
       const r = await qloo.insights({
         type: TYPE_URNS[a.type],
         entities: a.entity_ids,
         tags: a.tag_ids,
         locationQuery: a.location,
+        signalLocationQuery: a.signal_location,
         filterTags: a.filter_tag_ids,
         excludeTags: a.exclude_tag_ids,
         excludeEntities: a.exclude_entity_ids,
@@ -108,7 +115,8 @@ const QLOO_TOOLS = [
         priceMax: a.price_max,
         take: a.take ?? 10,
       });
-      return entityDraft(base("/v2/insights", a), r);
+      const data = a.type === "brand" ? consumerBrands(r.data, ctx.brandScope ?? "consumer") : r.data;
+      return entityDraft(base("/v2/insights", a), data.length === r.data.length ? r : { ...r, data });
     },
   } satisfies QlooTool<typeof InsightsArgs>,
   {
@@ -134,9 +142,9 @@ const QLOO_TOOLS = [
     name: "qloo_heatmap",
     description: "Where in a city this taste concentrates (hotspot cells with lat/lon).",
     schema: HeatmapArgs,
-    async run(a, qloo) {
+    async run(a, qloo, _now, ctx) {
       const r = await qloo.heatmap({ locationQuery: a.location, entities: a.entity_ids, tags: a.tag_ids });
-      return heatmapDraft(base("/v2/insights (urn:heatmap)", a), r, a.location);
+      return heatmapDraft(base("/v2/insights (urn:heatmap)", a), r, a.location, ctx.centre);
     },
   } satisfies QlooTool<typeof HeatmapArgs>,
   {
@@ -190,10 +198,11 @@ async function runQlooTool(
   if (!parsed.success) return errorOutcome(ctx.ledger, `Invalid arguments: ${describeIssues(parsed.error)}`);
   try {
     const now = ctx.now?.() ?? new Date();
-    const draft = await (tool.run as (a: unknown, q: QlooClient, n: Date) => Promise<EvidenceDraft>)(
+    const draft = await (tool.run as (a: unknown, q: QlooClient, n: Date, c: ToolContext) => Promise<EvidenceDraft>)(
       parsed.data,
       ctx.qloo,
       now,
+      ctx,
     );
     const { ledger, evidence } = addEvidence(ctx.ledger, draft);
     return { ledger, evidence, isError: false, content: JSON.stringify(toLlmView(evidence)) };

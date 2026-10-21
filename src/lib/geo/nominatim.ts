@@ -5,7 +5,10 @@
  * https://operations.osmfoundation.org/policies/nominatim/
  */
 
-export type ReverseGeocoder = (lat: number, lon: number) => Promise<string | undefined>;
+/** What a reverse lookup says about a spot: its local area name, and whether it is somewhere people live and gather. */
+export type GeoArea = { readonly name: string; readonly residential: boolean };
+
+export type ReverseGeocoder = (lat: number, lon: number) => Promise<GeoArea | undefined>;
 
 export type NominatimOptions = {
   readonly fetchImpl?: typeof fetch;
@@ -36,11 +39,32 @@ const ADDRESS_KEYS = ["neighbourhood", "suburb", "quarter", "city_district", "bo
 /** The most local named area in a Nominatim address object. */
 export function pickAreaName(address: Readonly<Record<string, unknown>> | undefined): string | undefined {
   if (!address) return undefined;
+  // Nominatim sometimes files a whole country or state under "city" (a London cell came back as "United Kingdom").
+  const wider = new Set(["country", "state", "county", "region"].flatMap((k) => (typeof address[k] === "string" ? [(address[k] as string).trim().toLowerCase()] : [])));
   for (const key of ADDRESS_KEYS) {
     const value = address[key];
-    if (typeof value === "string" && value.trim() !== "") return value.trim();
+    if (typeof value === "string" && value.trim() !== "" && !wider.has(value.trim().toLowerCase())) return value.trim();
   }
   return undefined;
+}
+
+/** Land uses and features that are not neighbourhoods: an audience does not live on a runway or in a rail yard. */
+const NON_RESIDENTIAL_CATEGORIES = new Set(["aeroway", "military", "industrial", "railway", "harbour", "man_made"]);
+const NON_RESIDENTIAL_LANDUSE = new Set(["industrial", "commercial", "retail", "railway", "military", "quarry", "port", "garages", "landfill"]);
+const AIRPORT_NAME = /\b(airport|airfield|aerodrome|airbase|o'hare|heathrow|gatwick|stansted|luton|laguardia|jfk)\b/i;
+
+type NominatimBody = { readonly category?: unknown; readonly type?: unknown; readonly name?: unknown; readonly address?: Record<string, unknown> };
+
+/** Whether the spot a reverse lookup describes is residential or at least a public district (not an airport or industrial land). */
+export function isResidentialArea(body: NominatimBody, name: string): boolean {
+  const category = typeof body.category === "string" ? body.category : "";
+  const type = typeof body.type === "string" ? body.type : "";
+  if (NON_RESIDENTIAL_CATEGORIES.has(category)) return false;
+  if (category === "landuse" && NON_RESIDENTIAL_LANDUSE.has(type)) return false;
+  if (["aerodrome", "airport", "terminal", "runway", "industrial"].includes(type)) return false;
+  if (AIRPORT_NAME.test(name) || (typeof body.name === "string" && AIRPORT_NAME.test(body.name))) return false;
+  const address = body.address ?? {};
+  return !("aeroway" in address) && !("industrial" in address);
 }
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -52,12 +76,12 @@ export function createNominatimGeocoder(o: NominatimOptions = {}): ReverseGeocod
   const timeoutMs = o.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const now = o.now ?? Date.now;
   const sleep = o.sleep ?? defaultSleep;
-  const cache = new Map<string, string>();
-  const inflight = new Map<string, Promise<string | undefined>>();
+  const cache = new Map<string, GeoArea>();
+  const inflight = new Map<string, Promise<GeoArea | undefined>>();
   let tail: Promise<unknown> = Promise.resolve();
   let lastAt: number | undefined;
 
-  async function request(lat: number, lon: number): Promise<string | undefined> {
+  async function request(lat: number, lon: number): Promise<GeoArea | undefined> {
     if (lastAt !== undefined) {
       const wait = lastAt + interval - now();
       if (wait > 0) await sleep(wait);
@@ -69,8 +93,9 @@ export function createNominatimGeocoder(o: NominatimOptions = {}): ReverseGeocod
     try {
       const res = await fetchImpl(url, { headers: { "User-Agent": userAgent, Accept: "application/json" }, signal: controller.signal });
       if (!res.ok) return undefined;
-      const body = (await res.json()) as { address?: Record<string, unknown> };
-      return pickAreaName(body.address);
+      const body = (await res.json()) as NominatimBody;
+      const name = pickAreaName(body.address);
+      return name ? { name, residential: isResidentialArea(body, name) } : undefined;
     } catch {
       return undefined;
     } finally {

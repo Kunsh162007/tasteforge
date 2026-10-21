@@ -66,7 +66,7 @@ const PLANS: Record<string, unknown> = {
     tags: ["japanese ceramics", "handmade tableware", "wabi-sabi", "slow living", "minimalist home"],
     musicTags: ["ambient", "neo classical", "lo-fi"],
   },
-  "couple-night-out": { seeds: [{ name: "Radiohead", kind: "artist" }, { name: "A24", kind: "brand" }], tags: ["vietnamese food", "date night"], musicTags: ["alternative rock"], venue: "restaurant" },
+  "wine-bar-nyc": { seeds: [{ name: "Radiohead", kind: "artist" }, { name: "A24", kind: "brand" }], tags: ["vietnamese food", "date night"], musicTags: ["alternative rock"], venue: "restaurant" },
 };
 
 function planLlm(id: string): LlmProvider {

@@ -26,14 +26,14 @@ Two modes: "I know my audience" (you name artists, brands, tastes) and "Find my 
 What you can check:
 
 - **Why-chips.** Each item opens the Qloo call behind it: endpoint, parameters, returned entities and affinity scores.
-- **Grounding score.** The share of submitted items that cite real evidence, computed by code. Items without valid citations are removed and listed.
+- **Citation coverage.** The share of submitted items that cite a real Qloo record, computed by code. Items without valid citations are removed and listed.
 - **Taste Proof.** Every pick verified and traceable: Qloo checks a plain LLM's picks and TasteForge's for the same audience. It catches picks Qloo cannot find, confirms TasteForge's places are real and located in the requested city, and scores fit as a secondary metric (about equal: see the benchmark below)
 - **Refine.** Like, dislike or lock items; only the affected sections are re-queried, with dislikes sent to Qloo as exclusions and likes added as signals.
 - **Two-city comparison** (same audience, second city, no Taste Proof) and **shareable `/b#...` links.** Shared links carry an HMAC signature from the server, so a link that was edited shows as unverified instead of passing for Qloo data.
 
 ## Evidence it works
 
-**Fabrication benchmark** (20 prompts, 5 cities, live Qloo, 2026-10-20; method and caveats in docs/BENCHMARK.md, reproduce with `npm run benchmark`): a plain LLM's place picks were missing from Qloo or in another city **56% of the time** (38 not found and 26 in another city, of 115; four runs gave 43% to 59%), and 29% of all its picks could not be found at all. TasteForge: 0% of 120, because it can only return what Qloo returned. Fit with the audience is about the same (places 0.78 baseline, 0.79 TasteForge), so the claim is verifiability, not a fit gap. Honest limits: Qloo's catalogue is not the world, so "not found" means "cannot be verified", and repeat runs were unstable at first (17% pick overlap); after deterministic settings and seed caching TasteForge repeats about 80% of its picks (3 prompts x 2 runs, indicative).
+**Verification benchmark** (20 prompts, 5 cities, live Qloo, 2026-10-21; method, classification and caveats in docs/BENCHMARK.md, reproduce with `npm run benchmark`): Qloo could not verify **30% of a plain LLM's 276 picks** in the requested city (26% of its places, 30 of 114). We checked every name across all Qloo entity types with accent, "The" and suffix-tolerant matching, and hand-classified the 84 misses: 10 likely invented (no evidence they exist), 54 real but missing from Qloo or listed under another type (authors and photographers named as artists, chains listed as places), 15 with a same-named place only in another city, 5 unclassified. An earlier, stricter matcher had reported 56% of places and 29% of picks as "not found"; most of that was the matcher and Qloo's coverage, not the model. TasteForge: 0% of 312, because it can only return what Qloo returned. Affinity is only a sanity check, since Qloo normalizes it within each query. Honest limits: "couldn't be verified" is not "fake", the invented/real split is a judgement from general knowledge, one baseline model (Groq gpt-oss-120b class) and one day. Repeat runs were unstable at first (17% pick overlap); after deterministic settings and seed caching TasteForge repeats about 80% of its picks (3 prompts x 2 runs, indicative).
 
 **Why this matters (sources)**
 
@@ -52,7 +52,7 @@ A Next.js (App Router) and TypeScript app with a hybrid agent pipeline, streamed
 3. **Graph walk** (Qloo, parallel by section): audience, sound, pairings, aesthetic, location. Slow Qloo calls are hedged, and after 28 s the walk stops waiting: the brief is written from what arrived and says so.
 4. **Critic** (fast LLM): looks at coverage per section and may request follow-up queries from a fixed menu (drop the city, tags only, entities only, more results), one round of about 10 s.
 5. **Synthesis** (main LLM, JSON schema): writes the brief from the evidence ledger only, including a named, contrasting palette.
-6. **Validator** (plain code): removes uncited items and computes the grounding score.
+6. **Validator** (plain code): removes uncited items and computes the citation coverage; menu ideas may only use words from Qloo's tags.
 7. **Taste Proof**: baseline versus TasteForge, scored by Qloo.
 
 This takes 3 to 5 LLM calls per brief. Our first version let the model pick every tool call and needed 10 to 15, which was slow and hit free-tier rate limits. Moving the predictable work into code fixed both.
@@ -88,7 +88,7 @@ If the Qloo calls were removed there would be nothing to write the brief from: t
 ## Accomplishments
 
 - A recommendation cannot reach the screen without a citation to a real Qloo result, and the user can open that result.
-- Taste Proof replaces "trust me" with checks produced by Qloo: every pick verified and traceable, fit about equal to a plain LLM answer (places 0.78 vs 0.79 in the 20-prompt benchmark), and non-existent or non-local picks caught (56% of the plain LLM's place picks). We do not claim a fit gap.
+- Taste Proof replaces "trust me" with checks produced by Qloo: every TasteForge pick is verified and traceable, and the plain answer's picks that Qloo cannot verify in the city are shown with the reason (30% of its picks, 26% of its places in the 20-prompt benchmark; 10 of the 84 misses look invented, most of the rest are real names Qloo lists elsewhere or under another type). We do not claim a fit gap.
 - The refine loop re-queries only what changed, uses Qloo's own exclude filters, and keeps locked items verbatim.
 - The full app, test suite and end-to-end test run offline with a mock Qloo and a scripted LLM, so every claim is reproducible without keys.
 - Accessible by default: keyboard-operable evidence drawer with focus handling, labelled meters, toggle buttons with pressed state, a print stylesheet.

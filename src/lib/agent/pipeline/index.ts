@@ -5,6 +5,9 @@ import type { Brief, BriefMode, DroppedItem } from "../brief";
 import type { AgentEvent, NeedsInputEvent, NeedsInputOption, SectionKey, StageName } from "../events";
 import { describeFailure, withDeadline, type Failure } from "../failure";
 import type { Ledger } from "../ledger";
+import { brandScopeFor } from "../brandScope";
+import { dedupeBrief } from "../dedupe";
+import { fillHotspots } from "../hotspotFill";
 import { validateBrief } from "../validator";
 import { sectionConfidence } from "./confidence";
 import { closeRun, createCtx, raceTimeout, snapshotStats, type PipelineCtx, type SectionStat } from "./context";
@@ -59,7 +62,7 @@ export type PipelineOptions = {
   /** Called once the taste signals are resolved, before the graph walk: the point where side work (the Taste Proof baseline) may start. */
   readonly onResolved?: () => void;
   /** Called once the core graph walk has finished or given up (always, even when the run fails): Qloo is then free for side work. */
-  readonly onWalked?: () => void;
+  readonly onWalked?: (ledger?: Ledger) => void;
   /** false: ambiguous names are resolved to the top match instead of asking (showcases, smoke). */
   readonly allowNeedsInput?: boolean;
 };
@@ -131,10 +134,10 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
   const walkedOnce = (): void => {
     if (walkedSignalled) return;
     walkedSignalled = true;
-    o.onWalked?.();
+    o.onWalked?.(ctx.box.ledger);
   };
   const llm = withinDeadline(o.llm, deadlineAt, emit);
-  const ctx = createCtx({ qloo: o.qloo, emit, now: o.now, geocode: o.geocode });
+  const ctx = createCtx({ qloo: o.qloo, emit, now: o.now, geocode: o.geocode, brandScope: brandScopeFor(o.prompt) });
   const stage = (name: StageName, status: "start" | "done", detail?: string): void =>
     emit({ type: "stage", stage: name, status, ...(detail ? { detail } : {}) });
   const fail = (failure: Failure): PipelineResult => {
@@ -183,11 +186,12 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     stage("synthesis", "start");
     const draft = await synthesizeBrief({ llm, prompt: o.prompt, mode: o.mode, city, signals, ledger: ctx.box.ledger });
     const validated = validateBrief(draft, o.mode, ctx.box.ledger);
-    const clean = dropSeedEchoes(validated.brief, ctx.guard.current);
+    // Repeats are removed before the repair step too, so it fills what is really missing rather than what is merely duplicated.
+    const clean = dedupeBrief(dropSeedEchoes(validated.brief, ctx.guard.current));
     const dropped = validated.dropped;
     const isSeed = (i: { readonly label: string; readonly qlooId?: string }): boolean => (i.qlooId !== undefined && ctx.guard.current.seedIds.has(i.qlooId)) || isSeedName(ctx.guard.current, i.label);
     const repaired = await repairThinSections({ llm, prompt: o.prompt, mode: o.mode, city, signals, ledger: ctx.box.ledger, isSeed }, clean);
-    const brief = repaired.brief;
+    const brief = fillHotspots(dedupeBrief(repaired.brief), ctx.box.ledger, city);
     const stats = snapshotStats(ctx);
     const withConfidence = { ...brief, sectionConfidence: sectionConfidence(brief, stats), ...modelField(llm) };
     stage("synthesis", "done", `grounding ${Math.round(brief.groundingScore * 100)}%${repaired.sections.length > 0 ? `, repaired ${repaired.sections.join(" and ")}` : ""}`);

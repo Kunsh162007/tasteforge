@@ -23,12 +23,14 @@ import {
 } from "@/ui/feedback";
 import { showcaseToRunState, type ShowcaseItem } from "@/ui/showcase";
 import { BriefView } from "./BriefView";
+import { Colophon } from "./Colophon";
 import { CompareBar } from "./CompareBar";
 import { CompareView } from "./CompareView";
 import { EvidenceProvider } from "./EvidenceContext";
 import { Home } from "./Home";
 import { Logo } from "./Logo";
 import { FeedbackContext, type FeedbackApi } from "./FeedbackContext";
+import { MondayList } from "./MondayList";
 import { ChangeSummary, RefineBar, RefineHint } from "./RefineBar";
 import { ShareButton } from "./ShareButton";
 import { TasteProofPanel } from "./TasteProofPanel";
@@ -85,6 +87,8 @@ export function TasteForgeApp({ demo = false }: { demo?: boolean }) {
   };
   // The brief can arrive before its proof: show a placeholder until the proof lands, the stage fails or the stream ends.
   const proofPending = !state.ended && !state.proof && state.stages.proof.status !== "failed" && state.stages.proof.status !== "skipped";
+  // A proof that will not come says why (the proof stage reports its reason) instead of leaving a hole in the page.
+  const proofNote = !state.proof && !proofPending ? state.stages.proof.detail : undefined;
   const inWalk = state.phase === "running" || state.phase === "needs_input" || state.phase === "error";
 
   return (
@@ -94,7 +98,7 @@ export function TasteForgeApp({ demo = false }: { demo?: boolean }) {
           <Logo />
           TasteForge
         </Link>
-        <p className="masthead__tag">Cultural briefs, grounded in what people actually love.</p>
+        <p className="masthead__tag">A brief for your café, with receipts.</p>
         {hasBrief ? (
           <div className="masthead__tools">
             <ShareButton run={state} />
@@ -132,14 +136,15 @@ export function TasteForgeApp({ demo = false }: { demo?: boolean }) {
         ) : null}
 
         {hasBrief && state.brief && !comparing ? (
-          <EvidenceProvider evidence={state.evidence}>
+          <EvidenceProvider evidence={state.evidence} signals={state.signals}>
             <FeedbackContext.Provider value={canMark ? api : null}>
               {canMark && !state.changes && !state.refine ? <RefineHint /> : null}
               {state.changes && state.changes !== dismissedChanges ? (
                 <ChangeSummary changes={state.changes} onDismiss={() => setDismissedChanges(state.changes)} />
               ) : null}
               <BriefView brief={state.brief} dropped={state.dropped} hasProof={Boolean(state.proof) || proofPending} />
-              <TasteProofPanel proof={state.proof} pending={proofPending} />
+              <TasteProofPanel proof={state.proof} pending={proofPending} note={proofNote} />
+              <MondayList brief={state.brief} />
               {canMark && cityA ? <CompareBar city={cityA} onCompare={startCompare} /> : null}
               {canMark ? (
                 <RefineBar
@@ -156,9 +161,7 @@ export function TasteForgeApp({ demo = false }: { demo?: boolean }) {
         ) : null}
       </main>
 
-      <footer className="colophon">
-        <p>Affinity scores and evidence come from Qloo. Sample data in demo mode is synthetic.</p>
-      </footer>
+      <Colophon />
     </div>
   );
 }

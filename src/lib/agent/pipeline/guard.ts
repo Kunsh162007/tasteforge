@@ -1,5 +1,5 @@
 import type { Brief, Item } from "../brief";
-import type { EvidenceEntity } from "../ledger";
+import type { EvidenceEntity, Ledger } from "../ledger";
 import { distanceKm } from "../summaries";
 
 /**
@@ -67,6 +67,14 @@ export function medianPoint(entities: readonly EvidenceEntity[], min = 2): GeoPo
   const total = (p: { lat: number; lon: number }) => pts.reduce((sum, q) => sum + distanceKm(cell(p), cell(q)), 0);
   const best = pts.reduce((a, b) => (total(b) < total(a) ? b : a));
   return { lat: best.lat, lon: best.lon };
+}
+
+/** Where the city is, from the places the walk found (undefined when too few have coordinates). */
+export function cityAnchor(ledger: Ledger): GeoPoint | undefined {
+  return medianPoint(
+    ledger.records.filter((r) => r.params.type === "place").flatMap((r) => r.entities ?? []),
+    MIN_LOCATED_FOR_ANCHOR,
+  );
 }
 
 export type Scrubbed = {

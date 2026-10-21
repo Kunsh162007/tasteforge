@@ -47,19 +47,46 @@ function excludeArgs(x: Exclusions): Record<string, readonly string[]> {
 
 const topIds = (e: Evidence | undefined, n: number): string[] => (e?.entities ?? []).slice(0, n).map((x) => x.id);
 
-async function walkAudience(ctx: PipelineCtx, s: Signals, x: Exclusions): Promise<void> {
+/**
+ * verified live 2026-10-21: `signal.location.query` weights the taste signal toward people in that place. Without it the
+ * Indore indie brief got Kings of Leon and The Black Keys; with it, Prateek Kuhad and The Local Train. Artist, brand, film and
+ * TV picks carry it whenever a city is known.
+ */
+const localArgs = (city: string | undefined): Record<string, string> => (city ? { signal_location: city } : {});
+
+async function walkAudience(ctx: PipelineCtx, s: Signals, city: string | undefined, x: Exclusions): Promise<void> {
   const noTagExclusions = excludeArgs({ ...x, tagIds: [] });
   await Promise.all([
-    viaTool(ctx, "audience", "qloo_insights", { type: "movie", ...signalArgsFor("movie", s), ...noTagExclusions, take: 8 }),
-    viaTool(ctx, "audience", "qloo_insights", { type: "tv_show", ...signalArgsFor("tv_show", s), ...noTagExclusions, take: 6 }, { optional: true }),
+    viaTool(ctx, "audience", "qloo_insights", { type: "movie", ...signalArgsFor("movie", s), ...localArgs(city), ...noTagExclusions, take: 8 }),
+    viaTool(ctx, "audience", "qloo_insights", { type: "tv_show", ...signalArgsFor("tv_show", s), ...localArgs(city), ...noTagExclusions, take: 6 }, { optional: true }),
     viaTool(ctx, "audience", "qloo_demographics", signalArgsFor("demographics", s)),
   ]);
 }
 
-async function walkSound(ctx: PipelineCtx, s: Signals, x: Exclusions): Promise<void> {
+/** Whether any of the seeds was resolved as an artist (a seed run from a preset has no search records and counts as one). */
+export function hasArtistSeed(ctx: PipelineCtx, s: Pick<Signals, "entityIds">): boolean {
+  if (s.entityIds.length === 0) return false;
+  const searches = ctx.box.ledger.records.filter((r) => r.endpoint === "/search");
+  if (searches.length === 0) return true;
+  return searches.some((r) => r.params.types === "artist" && (r.entities ?? []).some((e) => s.entityIds.includes(e.id)));
+}
+
+/**
+ * verified live 2026-10-21: seed brands and places (Blue Bottle, Muji) drag an artist query back to global indie, while the
+ * music-genre tags alone with `signal.location.query` return the city's own acts (Prateek Kuhad, The Local Train). So with a city,
+ * music tags and no artist among the seeds, the artist query is tags plus location.
+ */
+export function artistSignal(ctx: PipelineCtx, s: Signals, city: string | undefined): Record<string, readonly string[]> {
+  const all = signalArgsFor("artist", s);
+  if (!city || !all.tag_ids || hasArtistSeed(ctx, s)) return all;
+  return { tag_ids: all.tag_ids };
+}
+
+async function walkSound(ctx: PipelineCtx, s: Signals, city: string | undefined, x: Exclusions): Promise<void> {
   const artists = await viaTool(ctx, "sound", "qloo_insights", {
     type: "artist",
-    ...signalArgsFor("artist", s),
+    ...artistSignal(ctx, s, city),
+    ...localArgs(city),
     ...excludeArgs({ ...x, tagIds: [] }),
     take: LIST_TAKE,
   });
@@ -168,16 +195,32 @@ async function raceValue<T>(work: Promise<T>, ms: number): Promise<T | undefined
   }
 }
 
-async function walkPairings(ctx: PipelineCtx, s: Signals, x: Exclusions): Promise<void> {
-  await viaTool(ctx, "pairings", "qloo_insights", { type: "brand", ...signalArgsFor("brand", s), ...excludeArgs({ ...x, tagIds: [] }), take: LIST_TAKE });
+async function walkPairings(ctx: PipelineCtx, s: Signals, city: string | undefined, x: Exclusions): Promise<void> {
+  await viaTool(ctx, "pairings", "qloo_insights", { type: "brand", ...signalArgsFor("brand", s), ...localArgs(city), ...excludeArgs({ ...x, tagIds: [] }), take: LIST_TAKE });
 }
 
-const HOTSPOTS_TO_NAME = 4;
+/** Hotspots shown per brief, and how many candidates are checked to find that many real neighbourhoods. */
+const MAX_HOTSPOTS = 5;
+const CANDIDATES_TO_CHECK = 8;
+/** The reference places give Qloo-based hotspot names; wait this long for them before falling back to the geocoder alone. */
+const PLACES_WAIT_MS = 12_000;
+
+const NOTHING_NAMEABLE = "None of the hotspot cells could be given a neighbourhood name (or they lay at an airport or on industrial land).";
 
 const lower = (s: string): string => s.trim().toLowerCase();
 
+/** A country or region is never a neighbourhood (a London cell once came back as "United Kingdom"). */
+const WIDER_AREAS = new Set(["united kingdom", "united states", "england", "scotland", "wales", "greater london", "india", "france", "usa", "new york state", "illinois", "madhya pradesh", "ile-de-france", "île-de-france"]);
+
+/** The bare city, "City of X" or "X City" says nothing about where in the city; "Brooklyn Heights" does. */
+function isGenericCityName(name: string, city: string): boolean {
+  const n = lower(name);
+  const c = lower(city);
+  return n === c || n === `${c} city` || n === `city of ${c}` || n === `${c} district` || n === `${c} division` || WIDER_AREAS.has(n);
+}
+
 function isSpecificName(name: string, city: string, taken: readonly { readonly name: string }[]): boolean {
-  return !lower(name).includes(lower(city)) && !taken.some((e) => lower(e.name) === lower(name));
+  return !isGenericCityName(name, city) && !taken.some((e) => lower(e.name) === lower(name));
 }
 
 /** Top reference places with a position and a street address: what hotspots are named from. */
@@ -189,40 +232,29 @@ function placesWithAddress(ctx: PipelineCtx): NearbyPlace[] {
 }
 
 /**
- * Replaces coordinate-only hotspot names with neighbourhood names. Qloo's own data comes first: the area its nearest top
- * places name in their addresses ("Vijay Nagar"). Only hotspots that leaves unnamed go to reverse geocoding (best effort,
- * serial and cached); any still unnamed keep their placeholder and are described by direction from the city centre.
+ * Turns hotspot candidates into the hotspots shown. A cell is kept only with a real neighbourhood name: Qloo's own data
+ * comes first (the area its nearest reference places name in their addresses, "Vijay Nagar"), then reverse geocoding
+ * (best effort, serial and cached). Cells at airports or on industrial land (where OpenStreetMap says so) and cells
+ * nothing can name are dropped: the brief never shows raw coordinates.
  */
-async function nameHotspots(ctx: PipelineCtx, heat: Evidence, city: string): Promise<void> {
-  const entities = heat.entities;
-  if (!entities) return;
-  const named = [...entities];
-  let changed = false;
-  const takenNames = (): Set<string> => new Set(named.map((e) => lower(e.name)));
+async function nameHotspots(ctx: PipelineCtx, heat: Evidence, city: string, placesReady: Promise<unknown> | undefined): Promise<void> {
+  const candidates = heat.entities;
+  if (!candidates || candidates.length === 0) return;
+  if (placesReady) await raceValue(placesReady, PLACES_WAIT_MS);
   const places = placesWithAddress(ctx);
-  for (let i = 0; i < Math.min(named.length, HOTSPOTS_TO_NAME); i += 1) {
-    const e = named[i];
-    if (!isUnnamedArea(e.name) || e.lat === undefined || e.lon === undefined) continue;
-    const fromQloo = nameAreaFromPlaces({ lat: e.lat, lon: e.lon }, places, city, takenNames());
-    if (fromQloo) {
-      named[i] = { ...e, name: fromQloo };
-      changed = true;
-    }
+  const kept: EvidenceEntity[] = [];
+  for (const e of candidates.slice(0, CANDIDATES_TO_CHECK)) {
+    if (kept.length === MAX_HOTSPOTS) break;
+    if (e.lat === undefined || e.lon === undefined) continue;
+    const area = ctx.geocode ? await ctx.geocode(e.lat, e.lon) : undefined;
+    if (area && !area.residential) continue;
+    const taken = new Set(kept.map((k) => lower(k.name)));
+    let name = isUnnamedArea(e.name) ? nameAreaFromPlaces({ lat: e.lat, lon: e.lon }, places, city, taken) : e.name;
+    // verified live 2026-10-20: OpenStreetMap often only knows the city district ("Indore City"); a generic or repeated name says nothing.
+    if (!name && area && isSpecificName(area.name, city, kept)) name = area.name;
+    if (name) kept.push({ ...e, name });
   }
-  const geocode = ctx.geocode;
-  for (let i = 0; geocode && i < Math.min(named.length, HOTSPOTS_TO_NAME); i += 1) {
-    const e = named[i];
-    if (!isUnnamedArea(e.name) || e.lat === undefined || e.lon === undefined) continue;
-    const name = await geocode(e.lat, e.lon);
-    // verified live 2026-10-20: OpenStreetMap often only knows the city district ("Indore City"). A generic or repeated
-    // name says nothing, so such hotspots keep their placeholder and are described by direction from the city centre.
-    if (name && isSpecificName(name, city, named)) {
-      named[i] = { ...e, name };
-      changed = true;
-    }
-  }
-  if (!changed) return;
-  replaceEvidence(ctx, withHeatmapEntities(heat, named));
+  replaceEvidence(ctx, withHeatmapEntities(heat, kept, NOTHING_NAMEABLE));
 }
 
 /** Drops hotspots the user disliked (heatmap has no exclude parameter, so this is done after the call). */
@@ -233,10 +265,9 @@ function withoutCells(ctx: PipelineCtx, heat: Evidence, cellIds: readonly string
   return kept;
 }
 
-async function walkWhere(ctx: PipelineCtx, s: Signals, city: string, x: Exclusions): Promise<void> {
+async function walkWhere(ctx: PipelineCtx, s: Signals, city: string, x: Exclusions, placesReady: Promise<unknown> | undefined): Promise<void> {
   const heat = await viaTool(ctx, "where", "qloo_heatmap", { location: city, ...signalArgsFor("heatmap", s) });
-  // Neighbourhood names are a nicety: they arrive in time or the placeholders ("Area near ...") stay.
-  if (heat) ctx.optional.push(nameHotspots(ctx, withoutCells(ctx, heat, x.cellIds), city).catch(() => undefined));
+  if (heat) await nameHotspots(ctx, withoutCells(ctx, heat, x.cellIds), city, placesReady).catch(() => undefined);
 }
 
 export type WalkOptions = {
@@ -272,11 +303,12 @@ export async function walkSections(
   setGuard(ctx, signals, city);
   const has = (k: SectionKey): boolean => sections.includes(k);
   const branches: Promise<void>[] = [];
-  if (city && (has("aesthetic") || has("pairings"))) branches.push(walkPlaces(ctx, signals, city, x));
-  if (city && has("where")) branches.push(walkWhere(ctx, signals, city, x));
-  if (has("audience")) branches.push(walkAudience(ctx, signals, x));
-  if (has("sound")) branches.push(walkSound(ctx, signals, x));
-  if (has("pairings")) branches.push(walkPairings(ctx, signals, x));
+  const places = city && (has("aesthetic") || has("pairings")) ? walkPlaces(ctx, signals, city, x) : undefined;
+  if (places) branches.push(places);
+  if (city && has("where")) branches.push(walkWhere(ctx, signals, city, x, places));
+  if (has("audience")) branches.push(walkAudience(ctx, signals, city, x));
+  if (has("sound")) branches.push(walkSound(ctx, signals, city, x));
+  if (has("pairings")) branches.push(walkPairings(ctx, signals, city, x));
   const core = Promise.all(branches);
   if (opts.deadlineAt === undefined) await core;
   const outcome = opts.deadlineAt === undefined ? "done" : await raceTimeout(core, opts.deadlineAt - Date.now());

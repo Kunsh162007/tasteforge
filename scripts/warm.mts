@@ -3,7 +3,11 @@
  * the site finds them already built. Run it a few minutes before judging (the first request also wakes a sleeping
  * free instance, which takes about 30 s).
  *
- *   npm run warm -- [--url=https://tasteforge-fa98.onrender.com] [--timeout=1200] [--interval=8]
+ *   npm run warm -- [--url=https://tasteforge-fa98.onrender.com] [--timeout=1200] [--interval=8] [--regenerate]
+ *
+ * --regenerate throws away the server's cached briefs and builds all six again (use it after the pipeline changed). The server
+ * only allows that with SHOWCASE_ADMIN_TOKEN set; pass the same value in WARM_TOKEN (or --token=). The script sends it in the
+ * `x-warm-token` header over HTTPS, never in the URL, so it stays out of request logs.
  *
  * Exits 0 when every brief is ready, 1 if time runs out. It only reads the public showcase endpoint (plus one
  * rate-limited retry request when a brief has given up) and never needs a key.
@@ -19,9 +23,11 @@ const RETRY_EVERY_MS = 65_000;
 
 type Item = { readonly id: string; readonly status: "queued" | "generating" | "ready" | "failed"; readonly error?: string; readonly nextRetryAt?: number };
 
-async function fetchItems(base: string, retry: boolean): Promise<readonly Item[] | undefined> {
+async function fetchItems(base: string, retry: boolean, regenerate = false): Promise<readonly Item[] | undefined> {
   try {
-    const res = await fetch(`${base}/api/showcase${retry ? "?retry=1" : ""}`, { cache: "no-store", signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+    const query = regenerate ? "?regenerate=1" : retry ? "?retry=1" : "";
+    const headers: Record<string, string> = regenerate ? { "x-warm-token": arg("token") ?? process.env.WARM_TOKEN ?? "" } : {};
+    const res = await fetch(`${base}/api/showcase${query}`, { cache: "no-store", headers, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
     if (!res.ok) {
       out(`  server answered HTTP ${res.status}`);
       return undefined;
@@ -49,6 +55,10 @@ async function main(): Promise<number> {
   const interval = Number(arg("interval") ?? DEFAULT_INTERVAL_S) * 1000;
   out(`Warming ${base}`);
   let lastRetry = 0;
+  if (process.argv.includes("--regenerate")) {
+    out("  asking the server to rebuild every showcase brief");
+    await fetchItems(base, false, true);
+  }
   while (Date.now() < deadline) {
     let items = await fetchItems(base, false);
     if (items && gaveUp(items) && Date.now() - lastRetry > RETRY_EVERY_MS) {

@@ -81,10 +81,14 @@ export function normalizeEntity(raw: unknown): QlooEntity | undefined {
   const props = obj(e.properties);
   const tags = arr(e.tags).map(normalizeTag).filter((t): t is QlooTag => t !== undefined);
   const type = str(e.subtype) ?? str(e.type) ?? "urn:entity";
+  const kinds = arr(e.types)
+    .map((t) => str(t)?.split(":").pop())
+    .filter((k): k is string => k !== undefined);
   return compact({
     id,
     name: str(e.name) ?? id,
     type,
+    kinds: kinds.length > 0 ? kinds : undefined,
     note: entityNote(type, props),
     image: entityImage(props),
     affinity: num(obj(e.query).affinity),

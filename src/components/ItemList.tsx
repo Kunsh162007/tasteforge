@@ -3,6 +3,8 @@
 import type { ReactNode } from "react";
 import type { SlotPath } from "@/lib/agent/briefItems";
 import type { Item } from "@/ui/contract";
+import { localCity, rankingNote } from "@/ui/evidenceText";
+import { useEvidenceRecords } from "./EvidenceContext";
 import { useFeedback } from "./FeedbackContext";
 import { ItemFeedback } from "./ItemFeedback";
 import { Thin } from "./Section";
@@ -35,8 +37,11 @@ export function ItemList({
   empty?: string;
 }) {
   const feedback = useFeedback();
+  const records = useEvidenceRecords();
   if (items.length === 0) return <Thin>{empty}</Thin>;
+  const note = rankingNote(items, records);
   return (
+    <>
     <ul className="items" data-variant={variant}>
       {items.map((item) => {
         const state = path && feedback ? feedback.stateOf(path, item) : undefined;
@@ -51,6 +56,11 @@ export function ItemList({
             {variant === "places" ? <Pin /> : null}
             <div className="item__main">
               <span className="item__label">{item.label}</span>
+              {item.qlooId && localCity(item.evidence, records) ? (
+                <span className="local-tag" title={`Qloo weighted this pick toward people in ${localCity(item.evidence, records)}`}>
+                  local
+                </span>
+              ) : null}
               {item.detail ? <span className="item__detail">{item.detail}</span> : null}
               {state?.changed ? <span className="item__new">New</span> : null}
             </div>
@@ -63,5 +73,11 @@ export function ItemList({
         );
       })}
     </ul>
+    {note ? (
+      <p className="ranking-note" role="note">
+        {note}
+      </p>
+    ) : null}
+    </>
   );
 }

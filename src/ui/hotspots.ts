@@ -1,3 +1,4 @@
+import { isUnnamedArea } from "@/lib/agent/summaries";
 import type { Brief, Evidence } from "./contract";
 
 /** Map-ready hotspots, read from the heatmap evidence behind the brief's "where they are" section. */
@@ -25,7 +26,8 @@ export function hotspotsFromBrief(brief: Brief, evidence: Readonly<Record<string
     const record = evidence[id];
     if (!record || !record.endpoint.includes("heatmap")) continue;
     for (const e of record.entities ?? []) {
-      if (e.lat === undefined || e.lon === undefined || seen.has(e.id)) continue;
+      // A cell nobody could name is never shown (its placeholder is raw coordinates).
+      if (e.lat === undefined || e.lon === undefined || seen.has(e.id) || isUnnamedArea(e.name)) continue;
       seen.add(e.id);
       spots.push({
         id: e.id,

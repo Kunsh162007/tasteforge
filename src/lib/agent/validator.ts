@@ -1,5 +1,6 @@
 import type { Brief, BriefDraft, BriefMode, DroppedItem, Item } from "./brief";
 import { hasEvidence, type Ledger } from "./ledger";
+import { checkMenuIdea, evidenceVocabulary, isEntityItem, withProvenance } from "./menuRule";
 
 export type ValidationResult = {
   readonly brief: Brief;
@@ -28,6 +29,22 @@ function filterItems<T extends Item>(items: readonly T[], section: string, ledge
     }
   }
   return kept;
+}
+
+/**
+ * Pairings are brands (Qloo entities) and menu or merch ideas (the writer's words). An idea stays only when every word in it
+ * comes from the evidence's tags or names, and says which tags it comes from; the rest is removed, never shown as invented.
+ */
+function keepGroundedMenuIdeas(items: readonly Item[], ledger: Ledger, tally: Tally): Item[] {
+  const vocab = evidenceVocabulary(ledger);
+  return items.flatMap((item) => {
+    if (isEntityItem(item, ledger)) return [item];
+    const verdict = checkMenuIdea(item.label, vocab, ledger);
+    if (verdict.ok) return [withProvenance(item, verdict.sources)];
+    tally.grounded -= 1;
+    tally.dropped.push({ section: "pairings", label: item.label, reason: "not_in_evidence", evidence: item.evidence });
+    return [];
+  });
 }
 
 function validateMessaging(m: BriefDraft["messaging"], ledger: Ledger, tally: Tally): BriefDraft["messaging"] {
@@ -60,7 +77,7 @@ function validateSections(d: BriefDraft, ledger: Ledger, tally: Tally): BriefDra
       referencePlaces: f(d.aesthetic.referencePlaces, "aesthetic.referencePlaces"),
     },
     sound: { ...d.sound, artists: f(d.sound.artists, "sound.artists") },
-    pairings: f(d.pairings, "pairings"),
+    pairings: keepGroundedMenuIdeas(f(d.pairings, "pairings"), ledger, tally),
     ...(d.whereTheyAre
       ? { whereTheyAre: { ...d.whereTheyAre, hotspots: f(d.whereTheyAre.hotspots, "whereTheyAre.hotspots") } }
       : {}),

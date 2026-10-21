@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createNominatimGeocoder, pickAreaName } from "./nominatim";
+import { createNominatimGeocoder, isResidentialArea, pickAreaName } from "./nominatim";
 
 const reply = (address: Record<string, string>, ok = true) =>
   ({ ok, json: async () => ({ address }) }) as unknown as Response;
@@ -10,6 +10,8 @@ describe("pickAreaName", () => {
     expect(pickAreaName({ city: "Indore", city_district: "Zone 2" })).toBe("Zone 2");
     expect(pickAreaName({ country: "India" })).toBeUndefined();
     expect(pickAreaName(undefined)).toBeUndefined();
+    expect(pickAreaName({ city: "United Kingdom", country: "United Kingdom" })).toBeUndefined();
+    expect(pickAreaName({ suburb: "Lower Belvedere", city: "London", country: "United Kingdom" })).toBe("Lower Belvedere");
   });
 });
 
@@ -33,7 +35,7 @@ describe("createNominatimGeocoder", () => {
 
   it("sends a reverse request with a proper User-Agent", async () => {
     const { geocode, fetchImpl } = setup();
-    expect(await geocode(22.7244, 75.8839)).toBe("Palasia");
+    expect(await geocode(22.7244, 75.8839)).toEqual({ name: "Palasia", residential: true });
     const [url, init] = fetchImpl.mock.calls[0] as [string, RequestInit];
     expect(url).toContain("https://nominatim.openstreetmap.org/reverse?");
     expect(url).toContain("lat=22.7244");
@@ -72,5 +74,15 @@ describe("createNominatimGeocoder", () => {
     fetchImpl.mockRejectedValueOnce(new Error("offline"));
     expect(await geocode(1, 1)).toBeUndefined();
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("isResidentialArea", () => {
+  it("rejects airports and industrial land and accepts ordinary districts", () => {
+    expect(isResidentialArea({ category: "boundary", type: "administrative" }, "West Town")).toBe(true);
+    expect(isResidentialArea({ category: "aeroway", type: "aerodrome" }, "Chicago")).toBe(false);
+    expect(isResidentialArea({ category: "landuse", type: "industrial" }, "Docklands")).toBe(false);
+    expect(isResidentialArea({ category: "place", type: "suburb", name: "Heathrow Airport" }, "Longford")).toBe(false);
+    expect(isResidentialArea({ category: "boundary", type: "administrative" }, "O'Hare")).toBe(false);
   });
 });

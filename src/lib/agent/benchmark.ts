@@ -1,72 +1,64 @@
-import { CITY_RADIUS_KM, normalizeName, type GeoPoint } from "./pipeline/guard";
-import { distanceKm } from "./summaries";
+import { nameTokens, type Verdict, type VerifyStatus } from "./verify";
 
 /**
- * Pure helpers for the fabrication benchmark (scripts/benchmark.mts, docs/BENCHMARK.md): decide whether a
- * plain-LLM pick exists in Qloo and sits in the requested city, then aggregate per pick type.
+ * Pure helpers for the verification benchmark (scripts/benchmark.mts, docs/BENCHMARK.md): how many of a plain LLM's picks
+ * Qloo can verify in the requested city, how the rest split up, and how much two runs agree.
  */
 
 export type BenchKind = "artist" | "place" | "brand";
 export const BENCH_KINDS: readonly BenchKind[] = ["artist", "place", "brand"];
 
-/** What a Qloo name search returned (names and coordinates only; the raw response is never kept). */
-export type SearchHit = { readonly id: string; readonly name: string; readonly lat?: number; readonly lon?: number };
-
 export type PickOutcome = {
   readonly kind: BenchKind;
   readonly name: string;
-  /** Qloo returned an entity whose name matches the pick. */
-  readonly found: boolean;
+  readonly status: VerifyStatus;
   readonly qlooId?: string;
-  /** Places only: true when the closest matching entity lies outside the city; undefined when it has no coordinates. */
-  readonly offCity?: boolean;
-  /** Qloo's fit with the audience for found picks; null when unscored. */
+  /** For a wrong-type status: the type Qloo lists a same-named entity under. */
+  readonly matchedKind?: string;
+  /** Qloo's fit with the audience for verified picks; null when unscored. A sanity check only: affinity is normalized per query. */
   readonly affinity: number | null;
 };
 
-const MIN_CONTAINED_CHARS = 5;
-
-/** Same name after normalising, or one name contained in the other ("Blue Tokai" vs "Blue Tokai Coffee Roasters"). */
-export function namesMatch(a: string, b: string): boolean {
-  const x = normalizeName(a);
-  const y = normalizeName(b);
-  if (x === "" || y === "") return false;
-  if (x === y) return true;
-  const [short, long] = x.length <= y.length ? [x, y] : [y, x];
-  return short.length >= MIN_CONTAINED_CHARS && ` ${long} `.includes(` ${short} `);
-}
-
-/** The name as written, plus the name without a ", City" or " - Neighbourhood" tail ("Barcade, Williamsburg" -> "Barcade"). */
-export function nameVariants(name: string): string[] {
-  const head = name.split(/\s*[,–—]\s*|\s+-\s+/)[0].trim();
-  return head && head !== name.trim() ? [name.trim(), head] : [name.trim()];
-}
+export const outcomeOf = (kind: BenchKind, name: string, v: Verdict, affinity: number | null = null): PickOutcome => ({
+  kind,
+  name,
+  status: v.status,
+  ...(v.qlooId ? { qlooId: v.qlooId } : {}),
+  ...(v.matchedKind ? { matchedKind: v.matchedKind } : {}),
+  affinity,
+});
 
 /**
- * Gives the plain LLM every benefit of the doubt: it is "found" when any of the top hits matches its name, and for
- * places the hit closest to the city centre is the one judged against the city radius.
+ * Where a pick that could not be verified ends up. `invented` and `real_not_in_qloo` need a human (or a web search) to
+ * tell apart, so they come from a hand-kept audit; the other two follow from the status.
  */
-export function resolvePick(kind: BenchKind, name: string, hits: readonly SearchHit[], anchor?: GeoPoint): Pick<PickOutcome, "found" | "qlooId" | "offCity"> {
-  const matching = hits.filter((h) => namesMatch(name, h.name));
-  if (matching.length === 0) return { found: false };
-  if (kind !== "place" || !anchor) return { found: true, qlooId: matching[0].id };
-  const km = (h: SearchHit): number =>
-    h.lat === undefined || h.lon === undefined ? Infinity : distanceKm({ latitude: anchor.lat, longitude: anchor.lon }, { latitude: h.lat, longitude: h.lon });
-  const best = matching.reduce((a, b) => (km(b) < km(a) ? b : a));
-  const located = Number.isFinite(km(best));
-  return { found: true, qlooId: best.id, ...(located ? { offCity: km(best) > CITY_RADIUS_KM } : {}) };
+export type MissClass = "likely_invented" | "real_not_in_qloo" | "real_other_city" | "wrong_type" | "unclassified";
+export const MISS_CLASSES: readonly MissClass[] = ["likely_invented", "real_not_in_qloo", "wrong_type", "real_other_city", "unclassified"];
+
+export type AuditEntry = { readonly class: "likely_invented" | "real_not_in_qloo" | "real_other_city"; readonly note?: string };
+/** Hand audit of unverified picks, keyed by `${kind}|${normalized name}`. */
+export type Audit = Readonly<Record<string, AuditEntry>>;
+
+export const auditKey = (kind: BenchKind, name: string): string => `${kind}|${nameTokens(name).join(" ")}`;
+
+export function classifyMiss(p: PickOutcome, audit: Audit = {}): MissClass | undefined {
+  if (p.status === "verified") return undefined;
+  const audited = audit[auditKey(p.kind, p.name)];
+  if (audited) return audited.class;
+  if (p.status === "wrong_type") return "wrong_type";
+  if (p.status === "other_city") return "real_other_city";
+  return "unclassified";
 }
 
 export type KindSummary = {
   readonly picks: number;
-  readonly notFound: number;
-  readonly notFoundRate: number | null;
-  /** Found picks with coordinates, and how many of them lie outside the city (places only). */
-  readonly located: number;
-  readonly offCity: number;
-  readonly offCityRate: number | null;
-  /** Places only: share of picks that are missing from Qloo or outside the city. */
-  readonly unverifiedRate: number | null;
+  readonly verified: number;
+  readonly unverified: number;
+  readonly wrongType: number;
+  readonly otherCity: number;
+  /** Picks Qloo could not verify in the city (everything but verified). */
+  readonly couldntVerify: number;
+  readonly couldntVerifyRate: number | null;
   readonly scored: number;
   readonly meanFit: number | null;
 };
@@ -75,19 +67,17 @@ const rate = (n: number, d: number): number | null => (d === 0 ? null : n / d);
 const mean = (xs: readonly number[]): number | null => (xs.length === 0 ? null : xs.reduce((a, b) => a + b, 0) / xs.length);
 
 export function summarizeKind(picks: readonly PickOutcome[]): KindSummary {
-  const notFound = picks.filter((p) => !p.found).length;
-  const located = picks.filter((p) => p.found && p.offCity !== undefined);
-  const offCity = located.filter((p) => p.offCity).length;
-  const fits = picks.flatMap((p) => (p.found && p.affinity !== null ? [p.affinity] : []));
-  const isPlace = picks.some((p) => p.kind === "place");
+  const count = (s: VerifyStatus): number => picks.filter((p) => p.status === s).length;
+  const verified = count("verified");
+  const fits = picks.flatMap((p) => (p.status === "verified" && p.affinity !== null ? [p.affinity] : []));
   return {
     picks: picks.length,
-    notFound,
-    notFoundRate: rate(notFound, picks.length),
-    located: located.length,
-    offCity,
-    offCityRate: rate(offCity, located.length),
-    unverifiedRate: isPlace ? rate(notFound + offCity, picks.length) : null,
+    verified,
+    unverified: count("unverified"),
+    wrongType: count("wrong_type"),
+    otherCity: count("other_city"),
+    couldntVerify: picks.length - verified,
+    couldntVerifyRate: rate(picks.length - verified, picks.length),
     scored: fits.length,
     meanFit: mean(fits),
   };
@@ -99,10 +89,20 @@ export const summarizeByKind = (picks: readonly PickOutcome[]): Record<BenchKind
   brand: summarizeKind(picks.filter((p) => p.kind === "brand")),
 });
 
+/** Counts of the unverified picks per class. */
+export function missBreakdown(picks: readonly PickOutcome[], audit: Audit = {}): Record<MissClass, number> {
+  const out: Record<MissClass, number> = { likely_invented: 0, real_not_in_qloo: 0, wrong_type: 0, real_other_city: 0, unclassified: 0 };
+  for (const p of picks) {
+    const c = classifyMiss(p, audit);
+    if (c) out[c] += 1;
+  }
+  return out;
+}
+
 /** Overlap of two pick lists (Jaccard on normalised names): 1 = identical, 0 = nothing in common; null when both are empty. */
 export function overlap(a: readonly string[], b: readonly string[]): number | null {
-  const x = new Set(a.map(normalizeName));
-  const y = new Set(b.map(normalizeName));
+  const x = new Set(a.map((n) => nameTokens(n).join(" ")));
+  const y = new Set(b.map((n) => nameTokens(n).join(" ")));
   const union = new Set([...x, ...y]).size;
   if (union === 0) return null;
   return [...x].filter((n) => y.has(n)).length / union;

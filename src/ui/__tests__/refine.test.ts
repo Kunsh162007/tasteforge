@@ -121,6 +121,11 @@ describe("hotspots", () => {
     expect(hotspotsFromBrief(brief, {})).toEqual([]);
   });
 
+  it("never maps a cell that has no name (its placeholder is raw coordinates)", () => {
+    const withPlaceholder = { ev_h: { ...evidence.ev_h, entities: [...evidence.ev_h.entities, { id: "g4", name: "Area near 22.700, 75.800", affinity: 0.9, lat: 22.7, lon: 75.8 }] } };
+    expect(hotspotsFromBrief(brief, withPlaceholder).map((s) => s.name)).toEqual(["Vijay Nagar", "Palasia"]);
+  });
+
   it("scales the circle radius with affinity inside a bounded range", () => {
     expect(circleRadius(0)).toBe(9);
     expect(circleRadius(1)).toBe(30);

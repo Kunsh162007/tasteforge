@@ -2,11 +2,14 @@
 
 import { useEffect, useId, useRef } from "react";
 import type { Evidence } from "@/ui/contract";
+import { isLocalRecord, questionFor, readableParams, whySentence, type NameBook } from "@/ui/evidenceText";
 
 type Props = {
   ids: readonly string[];
   title: string;
   evidence: Readonly<Record<string, Evidence>>;
+  /** Ids to names, so the drawer reads "Prateek Kuhad" and not a UUID. */
+  book: NameBook;
   onClose: () => void;
 };
 
@@ -28,25 +31,18 @@ function Meter({ name, value }: { name: string; value?: number }) {
   );
 }
 
-function EvidenceCard({ record }: { record: Evidence }) {
-  const params = Object.entries(record.params);
+function EvidenceCard({ record, book, why }: { record: Evidence; book: NameBook; why?: string }) {
+  const params = readableParams(record, book);
+  const city = record.params.signal_location;
   return (
     <article className="ev-card" aria-label={`Evidence ${record.id}`}>
       <header className="ev-card__head">
         <span className="ev-card__id">{record.id}</span>
-        <code className="ev-card__endpoint">{record.endpoint}</code>
+        {isLocalRecord(record) ? <span className="local-tag" title="Qloo weighted this question toward people in that place">local to {city}</span> : null}
       </header>
+      <h3 className="ev-card__question">{questionFor(record, book)}</h3>
+      {why ? <p className="ev-card__why">{why}</p> : null}
       {record.summary ? <p className="ev-card__summary">{record.summary}</p> : null}
-      {params.length > 0 ? (
-        <dl className="ev-params">
-          {params.map(([k, v]) => (
-            <div key={k}>
-              <dt>{k}</dt>
-              <dd>{v}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
       {record.entities?.length ? (
         <>
           <h4 className="ev-card__sub">Entities (affinity)</h4>
@@ -67,11 +63,25 @@ function EvidenceCard({ record }: { record: Evidence }) {
           </ul>
         </>
       ) : null}
+      <details className="ev-raw">
+        <summary>The raw Qloo query</summary>
+        <code className="ev-card__endpoint">{record.endpoint}</code>
+        {params.length > 0 ? (
+          <dl className="ev-params">
+            {params.map(([k, v]) => (
+              <div key={k}>
+                <dt>{k}</dt>
+                <dd>{v}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+      </details>
     </article>
   );
 }
 
-export function EvidenceDrawer({ ids, title, evidence, onClose }: Props) {
+export function EvidenceDrawer({ ids, title, evidence, book, onClose }: Props) {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -117,10 +127,10 @@ export function EvidenceDrawer({ ids, title, evidence, onClose }: Props) {
           </button>
         </header>
         <div className="drawer__body">
-          {ids.map((id) => {
+          {ids.map((id, i) => {
             const record = evidence[id];
             return record ? (
-              <EvidenceCard key={id} record={record} />
+              <EvidenceCard key={id} record={record} book={book} why={i === 0 ? whySentence(title, [record], book) : undefined} />
             ) : (
               <article key={id} className="ev-card ev-card--missing">
                 <span className="ev-card__id">{id}</span>

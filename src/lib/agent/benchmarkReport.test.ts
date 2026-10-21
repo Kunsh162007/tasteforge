@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { PickOutcome } from "./benchmark";
 import { patchConsistency, renderBenchmark, type BenchRun } from "./benchmarkReport";
 
-const pick = (name: string, kind: PickOutcome["kind"], found: boolean, extra: Partial<PickOutcome> = {}): PickOutcome => ({ kind, name, found, affinity: found ? 0.5 : null, ...extra });
+const pick = (name: string, kind: PickOutcome["kind"], status: PickOutcome["status"]): PickOutcome => ({ kind, name, status, affinity: status === "verified" ? 0.5 : null });
 
 const run: BenchRun = {
   id: "london-cafe",
@@ -10,8 +10,14 @@ const run: BenchRun = {
   type: "cafe",
   seconds: 20,
   grounding: 1,
-  baseline: [pick("Real Cafe", "place", true, { offCity: false }), pick("Ghost Cafe", "place", false), pick("Far Cafe", "place", true, { offCity: true }), pick("Radiohead", "artist", true)],
-  tasteforge: [pick("Local Cafe", "place", true, { offCity: false }), pick("Mitski", "artist", true)],
+  baseline: [
+    pick("Real Cafe", "place", "verified"),
+    pick("Ghost Cafe", "place", "unverified"),
+    pick("Far Cafe", "place", "other_city"),
+    pick("Radiohead", "artist", "verified"),
+    pick("Arundhati Roy", "artist", "wrong_type"),
+  ],
+  tasteforge: [pick("Local Cafe", "place", "verified"), pick("Mitski", "artist", "verified")],
 };
 
 describe("renderBenchmark", () => {
@@ -22,12 +28,23 @@ describe("renderBenchmark", () => {
     models: ["groq:openai/gpt-oss-120b"],
     date: "2026-10-20",
     llmCalls: 12,
+    audit: { "place|ghost": { class: "likely_invented" } },
   });
 
-  it("reports the unverified share of baseline places and lists the failures by name", () => {
-    expect(md).toContain("67%"); // 1 not found + 1 off-city of 3 places
-    expect(md).toContain("Ghost Cafe (place, not found)");
-    expect(md).toContain("Far Cafe (place, other city)");
+  it("leads with 'couldn't be verified', never with 'invented', and shows the breakdown", () => {
+    expect(md).toContain("Picks Qloo could not verify in the requested city");
+    expect(md).toContain("60%"); // 3 of 5 baseline picks
+    expect(md).toContain("67%"); // 2 of 3 places
+    expect(md).toContain("| (a) Likely invented: no evidence it exists | 1 |");
+    expect(md).toContain("| (b) Qloo lists the name under another type (mostly real people and companies) | 1 |");
+    expect(md).toContain("| (c) Qloo lists a place of that name only in another city (may be a namesake) | 1 |");
+    expect(md.toLowerCase()).not.toContain("fabrication benchmark");
+  });
+
+  it("lists the failures by name and class, and keeps fit out of the claims", () => {
+    expect(md).toContain("Ghost Cafe (place; Likely invented: no evidence it exists)");
+    expect(md).toContain("Far Cafe (place; Qloo lists a place of that name only in another city (may be a namesake))");
+    expect(md).toContain("normalizes affinity within each query");
   });
 
   it("shows consistency, models and the caveats", () => {

@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { createQlooClient } from "@/lib/qloo";
 import { EMPTY_LEDGER } from "./ledger";
 import { makeDraft } from "./testing";
-import { executeTool, TOOL_DEFINITIONS } from "./tools";
+import { executeTool, TOOL_DEFINITIONS, type ToolContext } from "./tools";
 
 const qloo = createQlooClient({ mode: "mock", baseUrl: "https://hackathon.api.qloo.com" });
-const ctx = { qloo, ledger: EMPTY_LEDGER, now: () => new Date("2026-10-18T00:00:00Z") };
+const ctx: ToolContext = { qloo, ledger: EMPTY_LEDGER, now: () => new Date("2026-10-18T00:00:00Z") };
 
 const run = (name: string, args: Record<string, unknown>, c = ctx) => executeTool({ name, args }, c);
 
@@ -58,6 +58,50 @@ describe("executeTool", () => {
     }
     expect(ledger.records.map((r) => r.id)).toEqual(["ev_1", "ev_2", "ev_3", "ev_4", "ev_5", "ev_6"]);
     expect(ledger.records[0].params).toMatchObject({ type: "place", take: "3", tag_ids: "urn:tag:genre:media:indie" });
+  });
+
+  it("passes signal_location to Qloo as signal.location.query and records it on the evidence", async () => {
+    const seen: string[] = [];
+    const spy = {
+      ...ctx.qloo,
+      insights: async (p: Parameters<typeof ctx.qloo.insights>[0]) => {
+        seen.push(String(p.signalLocationQuery));
+        return ctx.qloo.insights(p);
+      },
+    };
+    const out = await run("qloo_insights", { type: "artist", entity_ids: ["MOCK-ARTIST-1"], signal_location: "Indore" }, { ...ctx, qloo: spy });
+    expect(seen).toEqual(["Indore"]);
+    expect(out.evidence?.params.signal_location).toBe("Indore");
+  });
+
+  it("sets aside media, agency and school brands unless the request is about them", async () => {
+    const tagged = (name: string, tag: string) => ({ id: name, name, type: "urn:entity:brand", tags: [{ id: tag, name: tag }] });
+    const data = [
+      tagged("Getty Images", "Photo agencies"),
+      tagged("Vice", "News & Politics"),
+      tagged("Academy of Art University", "Academic"),
+      tagged("Verve Coffee Roasters", "Coffee & Tea"),
+      { id: "bare", name: "No tags", type: "urn:entity:brand" },
+    ];
+    const qloo = { ...ctx.qloo, insights: async () => ({ data }) };
+    const consumer = await run("qloo_insights", { type: "brand", entity_ids: ["x"] }, { ...ctx, qloo });
+    expect(consumer.evidence?.entities?.map((e) => e.name)).toEqual(["Verve Coffee Roasters", "No tags"]);
+    const any = await run("qloo_insights", { type: "brand", entity_ids: ["x"] }, { ...ctx, qloo, brandScope: "any" });
+    expect(any.evidence?.entities).toHaveLength(5);
+  });
+
+  it("limits a heatmap to the city's centre and reach", async () => {
+    const qloo = {
+      ...ctx.qloo,
+      heatmap: async () => ({
+        data: [
+          { geohash: "far", latitude: 43.1566, longitude: -77.6088, affinity: 1 },
+          { geohash: "near", latitude: 40.715, longitude: -73.985, affinity: 0.5 },
+        ],
+      }),
+    };
+    const out = await run("qloo_heatmap", { location: "New York", entity_ids: ["MOCK-ARTIST-1"] }, { ...ctx, qloo, centre: { lat: 40.7128, lon: -74.006, radiusKm: 22 } });
+    expect(out.evidence?.entities?.map((e) => e.id)).toEqual(["near"]);
   });
 
   it("flags empty results so the model widens", async () => {

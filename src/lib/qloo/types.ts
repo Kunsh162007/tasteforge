@@ -50,6 +50,11 @@ export type InsightsParams = {
   readonly entities?: readonly string[];
   readonly tags?: readonly string[];
   readonly locationQuery?: string;
+  /**
+   * signal.location.query: weights the taste signal toward what people in this place like (verified live 2026-10-21).
+   * Unlike `locationQuery` (a filter on where a place is), it is how artist, brand and media picks become local.
+   */
+  readonly signalLocationQuery?: string;
   readonly filterTags?: readonly string[];
   readonly excludeTags?: readonly string[];
   /** filter.exclude.entities: entity ids that must not be returned (refine loop). */
@@ -105,6 +110,8 @@ export type QlooEntity = {
   readonly id: string;
   readonly name: string;
   readonly type: string;
+  /** Short entity kinds Qloo lists for the entity (`types` in search results: "place", "brand", "person", "author"...). */
+  readonly kinds?: readonly string[];
   readonly affinity?: number;
   readonly popularity?: number;
   /** One-line facts (address, price, style...) distilled from `properties`. */

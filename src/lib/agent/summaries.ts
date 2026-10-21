@@ -1,4 +1,5 @@
 import type { Demographics, HeatmapCell, QlooEntity, QlooResult, QlooTag, TrendPoint } from "@/lib/qloo";
+import type { CityCentre } from "./cityCentre";
 import { compactEntities, compactTags, LLM_VIEW_LIMIT, type EvidenceDraft, type EvidenceEntity, type EvidenceTag } from "./ledger";
 
 /** Builds compact evidence drafts from normalized Qloo results. */
@@ -101,9 +102,11 @@ function spreadHotspots(cells: readonly HeatmapCell[], n: number): HeatmapCell[]
   return [...chosen, ...ranked.filter((c) => !chosen.includes(c))].slice(0, n);
 }
 
-/** Where a cell lies relative to the mean of all returned cells, e.g. "north-east of the Indore centre, 6 km out". */
-function describeOffset(cell: Cell, all: readonly Cell[], city: string): string {
-  const center = { latitude: all.reduce((s, c) => s + c.latitude, 0) / all.length, longitude: all.reduce((s, c) => s + c.longitude, 0) / all.length };
+/** Where a cell lies relative to the city centre (or the mean of the cells), e.g. "north-east of the Indore centre, 6 km out". */
+function describeOffset(cell: Cell, all: readonly Cell[], city: string, centre?: { readonly lat: number; readonly lon: number }): string {
+  const center = centre
+    ? { latitude: centre.lat, longitude: centre.lon }
+    : { latitude: all.reduce((s, c) => s + c.latitude, 0) / all.length, longitude: all.reduce((s, c) => s + c.longitude, 0) / all.length };
   const km = distanceKm(center, cell);
   if (km < CENTRAL_KM) return `central ${city}`;
   const dx = (cell.longitude - center.longitude) * Math.cos(rad(center.latitude));
@@ -112,31 +115,42 @@ function describeOffset(cell: Cell, all: readonly Cell[], city: string): string 
   return `${COMPASS[octant]} of the ${city} centre, about ${Math.round(km)} km out`;
 }
 
-export function heatmapDraft(base: Base, r: QlooResult<HeatmapCell>, city: string): EvidenceDraft {
+/** Candidate hotspots kept before naming: several are lost to airports, industrial land and cells nobody can name. */
+export const HEATMAP_CANDIDATES = 10;
+
+/**
+ * Hotspot candidates for a city. With a known centre only cells within its radius count: Qloo's heatmap for "New York"
+ * ranks Rochester and Buffalo first, and London's and Chicago's include their airports.
+ */
+export function heatmapDraft(base: Base, r: QlooResult<HeatmapCell>, city: string, centre?: CityCentre): EvidenceDraft {
   if (r.data.length === 0) return empty(base, r.warning);
-  const cells = spreadHotspots(r.data, SUMMARY_NAMES);
+  const inCity = centre ? r.data.filter((c) => distanceKm({ latitude: centre.lat, longitude: centre.lon }, c) <= centre.radiusKm) : r.data;
+  if (inCity.length === 0) return empty(base, `Every hotspot Qloo returned lies more than ${centre?.radiusKm} km from the ${city} centre.`);
+  const cells = spreadHotspots(inCity, HEATMAP_CANDIDATES);
   const entities = compactEntities(
     cells.map((c) => ({
       id: c.geohash,
       name: c.name ?? `${UNNAMED_AREA_PREFIX}${c.latitude.toFixed(3)}, ${c.longitude.toFixed(3)}`,
       affinity: c.affinity,
-      note: describeOffset(c, r.data, city),
+      note: describeOffset(c, inCity, city, centre),
       lat: Math.round(c.latitude * 1e5) / 1e5,
       lon: Math.round(c.longitude * 1e5) / 1e5,
     })),
+    HEATMAP_CANDIDATES,
   );
   const top = entities.slice(0, 3).map((e) => e.name).join(", ");
-  return { ...base, summary: `${r.data.length} heatmap hotspots in ${city}; hottest: ${top}`, entities };
+  return { ...base, summary: `${inCity.length} heatmap hotspots in ${city}; hottest: ${top}`, entities };
 }
 
 /** The heatmap record with some hotspots removed: count and "hottest" names follow the remaining ones. */
 export function withHeatmapEntities<T extends { readonly summary: string; readonly entities?: readonly EvidenceEntity[] }>(
   heat: T,
   entities: readonly EvidenceEntity[],
+  whenEmpty = "Every hotspot was set aside by your feedback.",
 ): T {
   const removed = (heat.entities?.length ?? 0) - entities.length;
   if (entities.length === 0) {
-    return { ...heat, entities: [], summary: "No results. Every hotspot was set aside by your feedback." };
+    return { ...heat, entities: [], summary: `No results. ${whenEmpty}` };
   }
   const total = Number(/^(\d+) heatmap hotspots/.exec(heat.summary)?.[1] ?? NaN);
   const top = entities.slice(0, 3).map((e) => e.name).join(", ");
