@@ -1,4 +1,5 @@
 import type { Item } from "./brief";
+import { joinSentences } from "../sentences";
 import type { Evidence, Ledger } from "./ledger";
 
 /**
@@ -70,5 +71,5 @@ export function isEntityItem(item: Pick<Item, "qlooId" | "evidence">, ledger: Le
 export function withProvenance(item: Item, sources: readonly string[]): Item {
   if (sources.length === 0) return item;
   const note = `Creative suggestion from Qloo tags: ${sources.join(", ")}.`;
-  return { ...item, detail: item.detail ? `${item.detail} ${note}` : note };
+  return { ...item, detail: item.detail ? joinSentences(item.detail, note) : note };
 }

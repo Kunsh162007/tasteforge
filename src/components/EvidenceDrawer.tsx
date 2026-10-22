@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef } from "react";
 import type { Evidence } from "@/ui/contract";
-import { isLocalRecord, questionFor, readableParams, whySentence, type NameBook } from "@/ui/evidenceText";
+import { isLocalRecord, localSignalNote, questionFor, readableParams, whySentence, type NameBook } from "@/ui/evidenceText";
 
 type Props = {
   ids: readonly string[];
@@ -38,7 +38,7 @@ function EvidenceCard({ record, book, why }: { record: Evidence; book: NameBook;
     <article className="ev-card" aria-label={`Evidence ${record.id}`}>
       <header className="ev-card__head">
         <span className="ev-card__id">{record.id}</span>
-        {isLocalRecord(record) ? <span className="local-tag" title="Qloo weighted this question toward people in that place">local to {city}</span> : null}
+        {isLocalRecord(record) ? <span className="local-tag" title={localSignalNote(city)}>Ranked with {city} signal</span> : null}
       </header>
       <h3 className="ev-card__question">{questionFor(record, book)}</h3>
       {why ? <p className="ev-card__why">{why}</p> : null}

@@ -90,7 +90,7 @@ function Card({ item, onOpen }: { item: ShowcaseItem; onOpen: Props["onOpen"] })
         <h3 className="showcase__title">{item.title}</h3>
         <p className="showcase__sub muted">
           {MODE_LABEL[item.mode]}
-          {ready && grounding !== null ? `, ${grounding}% grounded` : ""}
+          {ready && grounding !== null ? `, ${grounding}% citation coverage` : ""}
         </p>
         {ready ? (
           <button type="button" className="btn-primary showcase__open" onClick={() => onOpen(item)}>

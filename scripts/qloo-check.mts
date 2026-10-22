@@ -16,7 +16,9 @@ import { join } from "node:path";
 import {
   createMockFetch,
   createQlooClient,
+  formatQuotaLine,
   loadQlooConfig,
+  recordRateLimitHeaders,
   type QlooConfig,
 } from "../src/lib/qloo";
 import {
@@ -51,6 +53,7 @@ function makeProbe(config: QlooConfig): Probe {
         headers: { Accept: "application/json", ...(config.apiKey ? { "X-Api-Key": config.apiKey } : {}) },
         signal: controller.signal,
       });
+      recordRateLimitHeaders(res.headers);
       return { status: res.status, body: await res.json().catch(() => undefined) };
     } catch {
       return { status: 0, body: undefined };
@@ -81,6 +84,7 @@ async function main(): Promise<number> {
   const results = await runChecks({ client, probe: makeProbe(config), mode: config.mode, cities: citiesFromArgs(), now: new Date() });
   const verify = linkVerifyItems(scanVerifyItems(join(process.cwd(), "src"), process.cwd()), results);
   out(redact(formatReport(results, verify, process.stdout.isTTY === true)));
+  out(formatQuotaLine());
   return summarize(results).FAIL > 0 ? 1 : 0;
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Evidence } from "../contract";
-import { buildNameBook, isLocalRecord, joinNames, localCity, questionFor, rankingNote, readableParams, whySentence } from "../evidenceText";
+import { buildNameBook, isLocalRecord, localChipText, localSignalNote, joinNames, localCity, questionFor, rankingNote, readableParams, whySentence } from "../evidenceText";
 
 const search: Evidence = { id: "ev_1", endpoint: "/search", params: { query: "Prateek Kuhad" }, summary: "", entities: [{ id: "A1", name: "Prateek Kuhad" }] };
 const tags: Evidence = { id: "ev_2", endpoint: "/v2/tags", params: { query: "indie folk" }, summary: "", tags: [{ id: "T1", name: "Indie Folk" }] };
@@ -74,5 +74,13 @@ describe("evidence text", () => {
     const varied = { ...artists, entities: artists.entities!.map((e, i) => ({ ...e, affinity: 0.97 - i * 0.05 })) };
     expect(rankingNote(items, { ev_3: varied })).toBeUndefined();
     expect(rankingNote(items.slice(0, 2), { ev_3: artists })).toBeUndefined();
+  });
+});
+
+describe("local chip wording", () => {
+  it("says popular with listeners for artists and popular in the city for brands, never 'local'", () => {
+    expect(localChipText("Chicago", true)).toBe("Popular with Chicago listeners");
+    expect(localChipText("Chicago", false)).toBe("Popular in Chicago");
+    expect(localSignalNote("Chicago")).toBe("Ranked with Chicago location signal");
   });
 });

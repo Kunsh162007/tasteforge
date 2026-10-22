@@ -24,7 +24,7 @@ describe("MondayList", () => {
     setup();
     const section = screen.getByRole("region", { name: "Your Monday list" });
     const headings = within(section).getAllByRole("heading", { level: 3 }).map((h) => h.textContent);
-    expect(headings).toEqual(["1. Press play", "2. Paint and style", "3. Visit three rooms", "4. Put two things on the board", "5. Say it three ways", "6. Hand out flyers in"]);
+    expect(headings).toEqual(["1. Press play", "2. Paint and style", "3. Visit three rooms", "4. Put these on the board", "5. Say it three ways", "6. Hand out flyers in"]);
   });
 
   it("links every playlist artist to a Spotify search that opens safely in a new tab", () => {

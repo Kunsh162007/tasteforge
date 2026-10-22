@@ -1,14 +1,16 @@
 "use client";
 
 import { useId, useState, type FormEvent } from "react";
+import { isSameCity, suggestSecondCity } from "@/ui/compareCity";
 
 /** "Compare with another city" action under a finished brief. */
 export function CompareBar({ city, onCompare }: { city: string; onCompare: (city: string) => void }) {
   const [open, setOpen] = useState(false);
-  const [value, setValue] = useState("");
+  const suggestion = suggestSecondCity(city);
+  const [value, setValue] = useState(suggestion);
   const id = useId();
   const other = value.trim();
-  const same = other.toLowerCase() === city.toLowerCase();
+  const same = isSameCity(other, city);
   const canSubmit = other.length >= 2 && !same;
 
   const submit = (e: FormEvent) => {
@@ -20,7 +22,7 @@ export function CompareBar({ city, onCompare }: { city: string; onCompare: (city
     return (
       <section className="compare-bar" aria-label="Compare cities">
         <p>
-          <strong>Same audience, different city?</strong> See how {city} compares.
+          <strong>Same audience, different city?</strong> See how {city} compares with {suggestion}.
         </p>
         <button type="button" className="btn-primary" onClick={() => setOpen(true)}>
           Compare with another city
@@ -43,7 +45,7 @@ export function CompareBar({ city, onCompare }: { city: string; onCompare: (city
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="London"
+          placeholder={suggestion}
           aria-describedby={`${id}-hint`}
         />
         <button type="submit" className="btn-primary" disabled={!canSubmit}>

@@ -1,19 +1,33 @@
 import { generateBrief } from "@/lib/agent";
 import { beginBaseline, finishProof } from "@/lib/agent/generate";
 import { getGeocoder } from "@/lib/geo/geocoder";
-import { createShowcaseService, SHOWCASE_TIMEOUT, type ShowcaseService } from "@/lib/showcase";
+import { QUOTA_PAUSED_MESSAGE, quotaPauseMessage, showcaseReserve } from "@/lib/qloo/quota";
+import { createShowcaseService, SHOWCASE_TIMEOUT, type ShowcaseGenerate, type ShowcaseService } from "@/lib/showcase";
 import { singleton } from "@/lib/singleton";
 import { getLlm, getQloo } from "./deps";
 
 /** Showcases build in the background, so their proof may take longer than a user would wait for one. */
 const SHOWCASE_PROOF_TIMEOUT_MS = 60_000;
 
+/**
+ * Showcase generation may spend a little deeper into the shared Qloo quota than visitor runs (a smaller reserve), but
+ * not all of it. Below that it stops before calling Qloo; the failure is not retryable, as the month does not refill soon.
+ */
+export const guardShowcaseGenerate =
+  (generate: ShowcaseGenerate, reserve: () => number = showcaseReserve): ShowcaseGenerate =>
+  async (def, onEvent) => {
+    const paused = quotaPauseMessage(reserve());
+    if (!paused) return generate(def, onEvent);
+    onEvent({ type: "error", message: paused, retryable: false });
+    return { ok: false, error: QUOTA_PAUSED_MESSAGE } as Awaited<ReturnType<ShowcaseGenerate>>;
+  };
+
 /** One showcase service per server instance, kept across dev hot reloads and shared by the API route and the boot warm-up. */
 export const getShowcaseService = (): ShowcaseService =>
   singleton("showcase", () =>
     createShowcaseService({
       source: `${process.env.QLOO_MODE ?? "mock"}|${process.env.LLM_PROVIDER === "mock" ? "mock" : "llm"}`,
-      generate: (def, onEvent) =>
+      generate: guardShowcaseGenerate((def, onEvent) =>
         generateBrief({
           prompt: def.prompt,
           mode: def.mode,
@@ -26,6 +40,7 @@ export const getShowcaseService = (): ShowcaseService =>
           timeoutMs: SHOWCASE_TIMEOUT,
           proofTimeoutMs: SHOWCASE_PROOF_TIMEOUT_MS,
         }),
+      ),
       reprove: (def, result, onEvent) => {
         const request = { llm: getLlm(), qloo: getQloo(), prompt: def.prompt, city: result.city ?? def.city, onEvent, proofTimeoutMs: SHOWCASE_PROOF_TIMEOUT_MS };
         return finishProof(request, beginBaseline(request, Promise.resolve(result.ledger)), result);

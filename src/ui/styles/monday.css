@@ -119,3 +119,8 @@ ul.monday__list li {
     break-before: auto;
   }
 }
+.monday__kind {
+  font-size: var(--step--1);
+  font-style: italic;
+  color: var(--ink-soft);
+}

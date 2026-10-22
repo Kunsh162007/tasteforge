@@ -159,7 +159,10 @@ function entityFacts(ledger: Ledger): Map<string, EntityFacts> {
   return out;
 }
 
-/** The brief items that are real Qloo entities of each kind, in brief order (capped like the baseline). */
+/**
+ * The brief items that are real Qloo entities of each kind, in brief order. Every such item is scored: the proof must
+ * judge exactly the picks the brief shows, so there is no cap here (the baseline's own counts are a request to the model).
+ */
 export function tasteforgePicks(brief: Brief, ledger: Ledger): PickRef[] {
   const kinds = entityKinds(ledger);
   const facts = entityFacts(ledger);
@@ -175,7 +178,6 @@ export function tasteforgePicks(brief: Brief, ledger: Ledger): PickRef[] {
     for (const item of items) {
       const id = item.qlooId && kinds.get(item.qlooId) === kind ? item.qlooId : byLabel.get(norm(item.label));
       if (id && kinds.get(id) === kind && !picked.has(id)) picked.set(id, item.evidence);
-      if (picked.size === BASELINE_COUNTS[kind]) break;
     }
     return [...picked].map(([id, cited]) => pickFor(kind, id, cited, facts.get(id)));
   });

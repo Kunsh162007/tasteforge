@@ -14,6 +14,8 @@ services:
         value: live # needs QLOO_API_KEY set in the Render dashboard
       - key: QLOO_BASE_URL
         value: https://hackathon.api.qloo.com
+      - key: QLOO_MONTH_RESERVE
+        value: "2000" # live briefs pause when Qloo reports fewer monthly requests left (shared key, 50,000 a month)
       - key: QLOO_API_KEY
         sync: false # set in the Render dashboard
       # Two chains, tried in order; a model that hits a quota or outage cools down and the next one answers.

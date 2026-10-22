@@ -1,7 +1,9 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import type { Swatch } from "@/ui/contract";
+import { swatchCaptions } from "@/ui/paletteCaptions";
+import { useEvidenceRecords } from "./EvidenceContext";
 import { useFeedback } from "./FeedbackContext";
 import { ItemFeedback } from "./ItemFeedback";
 import { Thin } from "./Section";
@@ -39,6 +41,8 @@ export function inkFor(hex: string): string {
 /** The mood board: the first colour is the lead and is drawn largest; label and note sit inside the colour. */
 export function Swatches({ palette }: { palette: readonly Swatch[] }) {
   const feedback = useFeedback();
+  const records = useEvidenceRecords();
+  const captions = useMemo(() => swatchCaptions(palette, records), [palette, records]);
   if (palette.length === 0) return <Thin>No colours could be tied to Qloo&rsquo;s decor and ambience tags for this audience, so none are shown.</Thin>;
   return (
     <ul className="swatches">
@@ -60,8 +64,8 @@ export function Swatches({ palette }: { palette: readonly Swatch[] }) {
                 {s.role === "accent" ? " · accent" : ""}
               </span>
               <span className="swatch__label">{s.label}</span>
-              {s.tags && s.tags.length > 0 ? (
-                <span className="swatch__tags">From Qloo tags: {s.tags.join(", ")}</span>
+              {captions[i].length > 0 ? (
+                <span className="swatch__tags">From Qloo tags: {captions[i].join(", ")}</span>
               ) : s.detail ? (
                 <span className="swatch__detail">{s.detail}</span>
               ) : null}

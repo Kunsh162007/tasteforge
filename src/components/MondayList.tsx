@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { buildMondayList, isEmptyMonday } from "@/lib/mondayList";
+import { buildMondayList, isEmptyMonday, MENU_KIND_LABEL, mondaySubtitle } from "@/lib/mondayList";
 import { mondayHtml, mondayText } from "@/lib/mondayExport";
 import type { Brief } from "@/ui/contract";
 import { paletteToPng, saveBlob } from "@/ui/paletteImage";
@@ -66,8 +66,7 @@ export function MondayList({ brief }: { brief: Brief }) {
           Your Monday list
         </h2>
         <p className="monday__sub">
-          {list.title}
-          {list.city ? `, ${list.city}` : ""}. Six things to do this week, each taken from the brief above.
+          {mondaySubtitle(list)}. Six things to do this week, each taken from the brief above.
         </p>
         <div className="monday__actions">
           <button type="button" className="btn-primary" onClick={downloadList}>
@@ -133,11 +132,12 @@ export function MondayList({ brief }: { brief: Brief }) {
         ) : null}
 
         {list.menu.length > 0 ? (
-          <Block title="4. Put two things on the board">
+          <Block title="4. Put these on the board">
             <ul className="monday__list">
               {list.menu.map((m) => (
                 <li key={m.name}>
                   <strong>{m.name}</strong>
+                  <span className="monday__kind">{MENU_KIND_LABEL[m.kind]}</span>
                   {m.why ? <span className="monday__where">{m.why}</span> : null}
                 </li>
               ))}

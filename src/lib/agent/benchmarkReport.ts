@@ -149,7 +149,7 @@ ${r.keptConsistency?.section ?? `## Repeat-run consistency
 
 Three prompts, each run twice with the real synthesis step. Overlap is the Jaccard overlap of pick names (1 = identical lists). Every TasteForge brief in these runs was fully grounded; what changes between runs is which questions the language model asks Qloo (its seeds and concept tags) and which of the results it writes up, so the picks differ even though each one is real. Both lists are far from repeatable: the design guarantees grounding, not stability.
 
-| Prompt | Plain LLM overlap | TasteForge overlap | TasteForge picks per run | Grounding of the two briefs |
+| Prompt | Plain LLM overlap | TasteForge overlap | TasteForge picks per run | Citation coverage of the two briefs |
 |---|---|---|---|---|
 ${consistencyRows.join("\n") || "| not run | | | | |"}`}
 
@@ -204,7 +204,7 @@ const avgOf = (rows: readonly Consistency[], f: (c: Consistency) => number | nul
 export function consistencyTable(rows: readonly Consistency[]): string {
   const lines = rows.map((c) => `| ${c.id} | ${pct(c.baselineOverlap)} | ${pct(c.tasteforgeOverlap)} | ${c.picks.join(" and ")} | ${c.groundings.map((g) => pct(g)).join(" and ")} |`);
   return [
-    "| Prompt | Plain LLM overlap | TasteForge overlap | TasteForge picks per run | Grounding of the two briefs |",
+    "| Prompt | Plain LLM overlap | TasteForge overlap | TasteForge picks per run | Citation coverage of the two briefs |",
     "|---|---|---|---|---|",
     ...(lines.length > 0 ? lines : ["| not run | | | | |"]),
   ].join("\n");

@@ -79,6 +79,19 @@ describe("tasteforgePicks", () => {
     ]);
   });
 
+  it("scores every entity the brief shows, in brief order, with nothing added or capped", () => {
+    const artists = Array.from({ length: 9 }, (_, i) => ({ id: `AR${i}`, name: `Artist ${i}` }));
+    const wide: Ledger = {
+      records: [
+        { id: "ev_1", endpoint: "/v2/insights", params: { type: "artist" }, summary: "s", entities: [...artists, { id: "NOT_SHOWN", name: "David Byrne" }] },
+      ],
+    };
+    const shown = artists.filter((a) => a.id !== "AR3");
+    const b = { ...brief, sound: { direction: "d", artists: shown.map((a) => ({ label: a.name, evidence: ["ev_1"], qlooId: a.id })) } } as Brief;
+    const names = tasteforgePicks(b, wide).filter((p) => p.kind === "artist").map((p) => p.name);
+    expect(names).toEqual(shown.map((a) => a.name));
+  });
+
   it("marks a place local only when Qloo has both its address and coordinates, and keeps the address for display", () => {
     const located: Ledger = {
       records: [

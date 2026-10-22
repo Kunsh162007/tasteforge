@@ -3,7 +3,7 @@ import type { Brief } from "./agent/brief";
 import type { Evidence } from "./agent/ledger";
 import { makeDraft } from "./agent/testing";
 import { mondayHtml, mondayText, escapeHtml } from "./mondayExport";
-import { buildMondayList, isEmptyMonday, spotifySearchUrl } from "./mondayList";
+import { buildMondayList, isEmptyMonday, mondaySubtitle, spotifySearchUrl } from "./mondayList";
 
 const item = (label: string, extra: Partial<{ detail: string; qlooId: string; evidence: string[] }> = {}) => ({ label, evidence: ["ev_1"], ...extra });
 
@@ -58,7 +58,24 @@ describe("buildMondayList", () => {
   it("puts menu ideas before brand collaborations and takes two", () => {
     expect(m.menu.map((x) => x.name)).toEqual(["Banh mi plate", "Pho"]);
     const onlyBrands = buildMondayList({ ...brief, pairings: [{ ...item("Reverb", { qlooId: "B1" }) }] }, evidence);
-    expect(onlyBrands.menu).toEqual([{ name: "Collab: Reverb" }]);
+    expect(onlyBrands.menu).toEqual([{ name: "Reverb", kind: "collab" }]);
+  });
+
+  it("labels each menu entry by kind and punctuates the notes", () => {
+    const mixed = buildMondayList(
+      { ...brief, pairings: [item("Reverb", { qlooId: "B1" }), item("Natural Wine", { detail: "Natural Wine Creative suggestion from Qloo tags: Jazz" })] },
+      evidence,
+    );
+    expect(mixed.menu).toEqual([
+      { name: "Natural Wine", kind: "idea", why: "Natural Wine. Creative suggestion from Qloo tags: Jazz." },
+      { name: "Reverb", kind: "collab" },
+    ]);
+  });
+
+  it("does not repeat the city in the subtitle", () => {
+    expect(mondaySubtitle({ title: "Chicago", city: "Chicago" })).toBe("Chicago");
+    expect(mondaySubtitle({ title: "A jazz cafe in Chicago", city: "Chicago" })).toBe("A jazz cafe in Chicago");
+    expect(mondaySubtitle({ title: "A jazz cafe", city: "Chicago" })).toBe("A jazz cafe, Chicago");
   });
 
   it("takes three copy lines and three named flyer neighbourhoods, never a coordinate placeholder", () => {

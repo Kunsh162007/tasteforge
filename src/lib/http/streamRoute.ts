@@ -6,6 +6,7 @@ import { getPipelineLimiter } from "./guards";
 import { BodyTooLargeError, clientIp, readJsonBody } from "./request";
 import { jsonError, SSE_HEADERS, sseStream } from "./sse";
 import type { RateLimiter } from "@/lib/rateLimit";
+import { monthReserve, quotaPauseMessage } from "@/lib/qloo/quota";
 
 /**
  * The scaffolding every streaming brief route shares: rate limit, body limit, parse, signature check,
@@ -32,6 +33,8 @@ export type StreamRouteEnv = {
   readonly budget?: Budget;
   readonly signer?: LedgerSigner;
   readonly deps?: () => RouteDeps;
+  /** Returns the pause message when the shared Qloo month quota is nearly spent. */
+  readonly quotaPause?: () => string | undefined;
 };
 
 const NOT_CONFIGURED = "The server is not configured for briefs yet.";
@@ -50,6 +53,15 @@ async function readBody(req: Request, spec: { maxBodyBytes: number; bodyLimitLab
   }
 }
 
+/** A friendly stop in the stream the UI already understands: one non-retryable error, then done. */
+function quotaPausedResponse(message: string): Response {
+  const stream = sseStream(async (emit) => {
+    emit({ type: "error", message, retryable: false });
+    return false;
+  });
+  return new Response(stream, { headers: SSE_HEADERS });
+}
+
 export async function handleStreamRoute<T>(req: Request, spec: StreamRouteSpec<T>, env: StreamRouteEnv = {}): Promise<Response> {
   const limit = (env.limiter ?? getPipelineLimiter()).check(clientIp(req));
   if (!limit.allowed) return jsonError(spec.tooManyMessage, 429, { "Retry-After": String(limit.retryAfterSeconds) });
@@ -61,6 +73,9 @@ export async function handleStreamRoute<T>(req: Request, spec: StreamRouteSpec<T
   const signer = env.signer ?? getLedgerSigner();
   const tampered = spec.verify?.(parsed.value, signer);
   if (tampered) return jsonError(tampered, 400);
+
+  const paused = (env.quotaPause ?? (() => quotaPauseMessage(monthReserve())))();
+  if (paused) return quotaPausedResponse(paused);
 
   let deps: RouteDeps;
   try {

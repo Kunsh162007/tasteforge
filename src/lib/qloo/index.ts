@@ -5,6 +5,18 @@ export { createQlooClient, type QlooClient, type QlooClientOptions, type QlooRet
 export { createCache, type Cache } from "./cache";
 export { DEFAULT_QLOO_BASE_URL, loadQlooConfig } from "./config";
 export { QlooError, type QlooErrorKind } from "./errors";
+export {
+  formatQuotaLine,
+  getQuota,
+  monthReserve,
+  quotaPauseMessage,
+  quotaSummary,
+  recordRateLimitHeaders,
+  showcaseReserve,
+  QUOTA_PAUSED_MESSAGE,
+  type QuotaState,
+  type QuotaSummary,
+} from "./quota";
 export { createMockFetch } from "./mock";
 export {
   demographicsQuery,

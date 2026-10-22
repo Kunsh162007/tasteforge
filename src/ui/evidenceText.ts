@@ -112,6 +112,11 @@ export function readableParams(r: Pick<Evidence, "params">, book: NameBook): [st
 /** True when the record weights its taste signal toward a place (`signal_location`). */
 export const isLocalRecord = (r: Pick<Evidence, "params">): boolean => Boolean(r.params.signal_location);
 
+export const localSignalNote = (city: string): string => `Ranked with ${city} location signal`;
+
+/** Chip text for a pick ranked with a location signal: audience picks (artists) vs everything else (brands). */
+export const localChipText = (city: string, audience: boolean): string => (audience ? `Popular with ${city} listeners` : `Popular in ${city}`);
+
 /** The place a list of items was localized to, when any cited record was. */
 export function localCity(evidenceIds: readonly string[], evidence: Readonly<Record<string, Evidence>>): string | undefined {
   for (const id of evidenceIds) {

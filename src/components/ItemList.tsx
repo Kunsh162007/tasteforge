@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import type { SlotPath } from "@/lib/agent/briefItems";
 import type { Item } from "@/ui/contract";
-import { localCity, rankingNote } from "@/ui/evidenceText";
+import { localChipText, localCity, localSignalNote, rankingNote } from "@/ui/evidenceText";
 import { useEvidenceRecords } from "./EvidenceContext";
 import { useFeedback } from "./FeedbackContext";
 import { ItemFeedback } from "./ItemFeedback";
@@ -18,6 +18,15 @@ function Pin() {
     <svg className="item__pin" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
       <path d="M10 1.5a6 6 0 0 0-6 6c0 4.2 6 11 6 11s6-6.8 6-11a6 6 0 0 0-6-6Zm0 8.2a2.2 2.2 0 1 1 0-4.4 2.2 2.2 0 0 1 0 4.4Z" fill="currentColor" />
     </svg>
+  );
+}
+
+/** A quiet chip: the pick was ranked with a location signal, which is not the same as "from there". */
+function LocalChip({ city, audience }: { city: string; audience: boolean }) {
+  return (
+    <span className="local-tag" title={localSignalNote(city)} aria-description={localSignalNote(city)}>
+      {localChipText(city, audience)}
+    </span>
   );
 }
 
@@ -57,9 +66,7 @@ export function ItemList({
             <div className="item__main">
               <span className="item__label">{item.label}</span>
               {item.qlooId && localCity(item.evidence, records) ? (
-                <span className="local-tag" title={`Qloo weighted this pick toward people in ${localCity(item.evidence, records)}`}>
-                  local
-                </span>
+                <LocalChip city={localCity(item.evidence, records) as string} audience={path === "sound.artists"} />
               ) : null}
               {item.detail ? <span className="item__detail">{item.detail}</span> : null}
               {state?.changed ? <span className="item__new">New</span> : null}

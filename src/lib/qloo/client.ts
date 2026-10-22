@@ -1,5 +1,6 @@
 import { createCache, type Cache } from "./cache";
 import { errorForStatus, QlooError } from "./errors";
+import { getQuota, recordRateLimitHeaders, secondAllowanceLow, secondWaitMs } from "./quota";
 import { createMockFetch } from "./mock";
 import {
   normalizeDemographics,
@@ -130,6 +131,8 @@ const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => set
  */
 function isTransient(e: unknown): boolean {
   if (!(e instanceof QlooError)) return false;
+  // A spent month allowance does not clear on a retry.
+  if (e.kind === "rate_limit" && getQuota().month?.remaining === 0) return false;
   return e.kind === "rate_limit" || (e.kind === "http" && (e.status ?? 0) >= 500);
 }
 
@@ -173,6 +176,7 @@ export function createQlooClient(options: QlooClientOptions): QlooClient {
         const headers: Record<string, string> = { Accept: "application/json" };
         if (apiKey) headers["X-Api-Key"] = apiKey;
         const res = await fetchImpl(url, { method: "GET", headers, signal: controller.signal });
+        recordRateLimitHeaders(res.headers);
         if (!res.ok) throw errorForStatus(res.status);
         return await readJson(res);
       } catch (e) {
@@ -218,7 +222,8 @@ export function createQlooClient(options: QlooClientOptions): QlooClient {
         reject(e);
       };
       const timer = setTimeout(() => {
-        if (settled) return;
+        // A duplicate spends one of the few requests left in this second.
+        if (settled || secondAllowanceLow()) return;
         hedge = startSend(url);
         hedge.promise.then(succeed, fail);
       }, hedgeAfterMs);
@@ -235,7 +240,12 @@ export function createQlooClient(options: QlooClientOptions): QlooClient {
   async function sendWithRetry(url: string): Promise<unknown> {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await limit(() => send(url));
+        return await limit(async () => {
+          // Inside the limiter, so queued requests wait behind the one that waits for the second window to reset.
+          const paceMs = secondWaitMs();
+          if (paceMs > 0) await sleep(paceMs);
+          return send(url);
+        });
       } catch (e) {
         const allowed = retries + (e instanceof QlooError && e.kind === "rate_limit" ? EXTRA_RATE_LIMIT_RETRIES : 0);
         if (attempt >= allowed || !isTransient(e)) throw e;

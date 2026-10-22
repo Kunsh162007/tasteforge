@@ -1,4 +1,4 @@
-import type { MondayList } from "./mondayList";
+import { MENU_KIND_LABEL, mondaySubtitle, type MondayList } from "./mondayList";
 
 /** Plain-text and standalone-HTML renderings of the Monday list, for copying, downloading and printing. */
 
@@ -7,11 +7,11 @@ const bullet = (s: string): string => `  [ ] ${s}`;
 export function mondayText(m: MondayList): string {
   const section = (title: string, lines: readonly string[]): string[] => (lines.length > 0 ? ["", title.toUpperCase(), ...lines.map(bullet)] : []);
   return [
-    `MONDAY LIST: ${m.title}${m.city ? ` (${m.city})` : ""}`,
+    `MONDAY LIST: ${mondaySubtitle(m)}`,
     ...section("Press play (a playlist, search each on Spotify)", m.playlist.map((p) => `${p.name}: ${p.url}`)),
     ...section("Paint and style (colours)", m.palette.map((c) => `${c.name} ${c.hex}`)),
     ...section("Visit three rooms before you open", m.places.map((p) => (p.where ? `${p.name}, ${p.where}` : p.name))),
-    ...section("Put on the board", m.menu.map((i) => (i.why ? `${i.name}. ${i.why}` : i.name))),
+    ...section("Put on the board", m.menu.map((i) => `${i.name} (${MENU_KIND_LABEL[i.kind].toLowerCase()})${i.why ? `. ${i.why}` : ""}`)),
     ...section("Say it (copy lines)", m.copy),
     ...section("Hand out flyers in", m.flyers.map((f) => (f.note ? `${f.name}: ${f.note}` : f.name))),
     "",
@@ -39,9 +39,9 @@ export function mondayHtml(m: MondayList): string {
     section("Press play: a playlist (search each on Spotify)", m.playlist.map((p) => link(p.name, p.url))),
     section("Paint and style", m.palette.map((c) => `<span class="chip" style="background:${safeHex(c.hex)}"></span>${escapeHtml(c.name)}${small(c.hex)}`)),
     section("Visit three rooms before you open", m.places.map((p) => `${escapeHtml(p.name)}${small(p.where)}`)),
-    section("Put on the board", m.menu.map((i) => `${escapeHtml(i.name)}${small(i.why)}`)),
+    section("Put on the board", m.menu.map((i) => `${escapeHtml(i.name)} <small>${MENU_KIND_LABEL[i.kind].toLowerCase()}</small>${small(i.why)}`)),
     section("Say it", m.copy.map(escapeHtml)),
     section("Hand out flyers in", m.flyers.map((f) => `${escapeHtml(f.name)}${small(f.note)}`)),
   ].join("");
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Monday list: ${escapeHtml(m.title)}</title><style>${CSS}</style></head><body><h1>Monday list</h1><p>${escapeHtml(m.title)}${small(m.city)}</p>${body}<footer>Made with TasteForge from Qloo taste-graph evidence.</footer></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Monday list: ${escapeHtml(m.title)}</title><style>${CSS}</style></head><body><h1>Monday list</h1><p>${escapeHtml(mondaySubtitle(m))}</p>${body}<footer>Made with TasteForge from Qloo taste-graph evidence.</footer></body></html>`;
 }

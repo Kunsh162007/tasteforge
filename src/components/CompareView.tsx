@@ -79,7 +79,7 @@ function Diff({ a, bBrief, cityB }: { a: CompareSide; bBrief: Brief; cityB: stri
     <>
       <p className="compare__summary" role="status">
         <strong>{result.shared}</strong> in common, <strong>{result.differing}</strong> that differ between {a.city} and {cityB}.
-        Grounding {Math.round(a.brief.groundingScore * 100)}% vs {Math.round(bBrief.groundingScore * 100)}%.
+        Citation coverage {Math.round(a.brief.groundingScore * 100)}% vs {Math.round(bBrief.groundingScore * 100)}%.
       </p>
       {result.slots.map((diff) => (
         <SlotBlock key={diff.key} diff={diff} cityA={a.city} cityB={cityB} />

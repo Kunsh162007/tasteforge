@@ -194,7 +194,7 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
     const brief = fillHotspots(dedupeBrief(repaired.brief), ctx.box.ledger, city);
     const stats = snapshotStats(ctx);
     const withConfidence = { ...brief, sectionConfidence: sectionConfidence(brief, stats), ...modelField(llm) };
-    stage("synthesis", "done", `grounding ${Math.round(brief.groundingScore * 100)}%${repaired.sections.length > 0 ? `, repaired ${repaired.sections.join(" and ")}` : ""}`);
+    stage("synthesis", "done", `citation coverage ${Math.round(brief.groundingScore * 100)}%${repaired.sections.length > 0 ? `, repaired ${repaired.sections.join(" and ")}` : ""}`);
     emit({ type: "brief", brief: withConfidence, dropped, evidence: ctx.box.ledger.records, signals });
     return { ok: true, brief: withConfidence, dropped, ledger: ctx.box.ledger, signals, stats, city };
   } catch (e) {

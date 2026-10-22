@@ -1,70 +1,64 @@
-# TasteForge: 3-minute walkthrough
+# TasteForge: 3-minute judge walkthrough
 
-For a judge on the live site: https://tasteforge-fa98.onrender.com. Every step says what to do and what to notice.
+For a judge on the live site: https://tasteforge-fa98.onrender.com. Start with the showcase briefs. They are pre-built on the server, so they open instantly and nothing has to run live. Each step says what to do and what to notice.
 
-Before you start: if the page shows "busy, retrying" at any point, wait a few seconds; the server is pacing a free-tier LLM. If a live brief is slow, step 7 (showcase briefs) is the instant fallback.
+If the first load takes about 30 seconds, that is the free Render instance waking up. If the showcase cards still say they are being built, wait a minute or click **Try the showcase again**.
 
-## 0:00 to 0:20 - The question
+## 0:00 to 0:20: the home page
 
-TasteForge makes a cultural brief for a small business or creator. The test it is built around: would the brief be the same without Qloo? Watch for the places where it could not be.
+Read the headline, **"A brief for your café, with receipts."** The card beside it is a real brief (Chicago), not a mock-up.
 
-## 0:20 to 1:10 - Build a brief (about 40 s of streaming)
+Notice: it is made for independent café, bar and restaurant founders before opening day. The whole pitch is that every line comes with a receipt.
 
-1. Choose **I know my audience**.
-2. Click the example **A couple, A24, Radiohead, pho**, or paste:
-   > A couple who love A24 films, Radiohead and Vietnamese food.
-3. City: **Brooklyn** (the example fills it). Click **Build the brief**.
+## 0:20 to 1:00: open the Chicago brief
 
-Notice:
+1. Click **Open a finished brief**, then open **A record-store bar in Chicago**.
+2. The cover shows the prompt, the city, a citation coverage badge (the share of items that cite a real Qloo record, computed by code) and the model that wrote the prose.
+3. Scroll to **The look**. Each palette swatch is captioned with the Qloo tags it came from, and **Places that set the tone** lists the real Chicago places those tags were read from.
 
-- The graph-walk trail fills in live: seeds, resolve, walk, critic, synthesis, proof. Each line is a real Qloo call with its result.
-- If a name is ambiguous the agent stops and asks "which did you mean?" instead of guessing. Answer it and it continues.
-- A grounding percentage appears with the brief. It is computed by code from how many items cite real evidence.
+Notice: the look of the room comes from what real local places this audience likes actually look like, not from the model's imagination.
 
-## 1:10 to 1:50 - Why-chips: nothing is unsourced
+## 1:00 to 1:30: open a receipt
 
-1. In **The sound** click a **Why** button next to an artist.
-2. The drawer shows the Qloo call behind it: endpoint (`/v2/insights`), parameters, returned entities with affinity scores.
-3. In **The look**, open the Why on a palette swatch. The colour comes from decor and ambience tags that Qloo attached to places the audience likes; the LLM only maps tag to hex.
-4. In **Where they are**, find the neighbourhood list and the map. These are heatmap results for the audience in the chosen city.
+1. In **The sound**, click a **Why** button next to an artist.
+2. The evidence drawer shows the Qloo question behind that pick, the entities and scores it returned, and the raw query. "Local" means the Qloo query was weighted toward people in Chicago: these are artists Chicago listeners over-index on, not necessarily Chicago artists.
+3. Close it with Escape.
 
-Notice: if a section had thin data it carries a lower confidence label rather than filler. Anything the model cited wrongly is removed and listed in the "dropped" note.
+Notice: every item has one of these. Anything the model cited wrongly is removed and listed in a "dropped" note rather than shown.
 
-## 1:50 to 2:20 - Taste Proof
+## 1:30 to 2:15: Taste Proof
 
-Scroll to **Taste proof**.
+Use the section links at the top of the brief to jump to **Taste proof**.
 
-- Lead with the three checks, in this order: picks Qloo could not find (a plain LLM names places and artists that do not exist in Qloo; TasteForge's are all Qloo results), real places in the city (TasteForge's places were located by Qloo with addresses), and only then audience fit.
-- Click a `trace` button on a TasteForge pick: it opens the Qloo call behind it.
-- Be straight about the fit gap: fit is about equal (places 0.78 vs 0.79 over the 20-prompt benchmark in docs/BENCHMARK.md). The claim is "every pick verified, local and traceable; about half of a plain LLM's place picks are not", not "10x better".
+- The proof asks a plain LLM, which has no Qloo data, the same question. Then it looks up each of its picks in Qloo, across every entity type, in the requested city.
+- Each plain pick is labelled **verified**, **wrong type in Qloo**, **in Qloo, but in another city**, or **not in Qloo's data**. None of these labels says "invented": Qloo's catalogue is not the whole world.
+- Click **trace** on a TasteForge pick to open the evidence behind it.
+- Be straight about fit: the affinity row is only a sanity check, and the two lists fit the audience about equally. The claim is verifiability. In our 20-prompt benchmark, Qloo couldn't verify 30% of a plain LLM's picks. Of the 84 misses, 10 looked invented, 54 were real but not in Qloo or filed under another type, and 15 were in another city (`docs/BENCHMARK.md`).
 
-Notice the caption: affinity is fit with this audience's taste signals. It is Qloo's number, not ours.
+## 2:15 to 2:45: the Monday list
 
-## 2:20 to 2:40 - Refine
+Jump to **Monday list**.
 
-1. In **The sound**, click **Dislike** on the first artist and **Like** on another.
-2. Click **Refine brief**.
+Notice: it has six actions taken from the brief. Press play on a playlist, paint with the palette (there is a PNG download), visit three rooms, put a menu idea or brand collab on the board (menu wording only from Qloo's tags), say it three ways, and hand out flyers in the listed neighbourhoods. **Download the list**, **Print this page** and **Copy as text** all work offline.
 
-Notice: only the sections you touched re-run; the disliked artist is excluded from the new Qloo query (not just hidden); liked items stay and become extra signals; a "What changed" note lists additions and removals; Taste Proof re-scores. **Lock** keeps an item exactly as it is.
+## 2:45 to 3:00: a second city, or your own
 
-## 2:40 to 3:00 - Two cities and sharing
-
-1. Run the same prompt for a second city and open the two-city comparison to see how the same audience's look and hotspots differ. It reuses the first run's seeds and has no Taste Proof, so it is quick.
-2. Click the share control and open the `/b#...` link in a private window: the same brief loads, with a "Shared link, verified" banner showing the evidence is what the server issued. (If the server restarted without `LEDGER_SECRET` set, old links show "unverified".)
-3. Optional: **Print or save as PDF** for a client-ready copy.
+- Go back and open **A cafe for young professionals in Indore**. It shows the honest case: Qloo's coverage is thinner there, so sections carry lower confidence labels instead of padding.
+- Optional, live (20 to 60 s): scroll to **Brief your own project**, pick **I know my audience** or **Find my audience**, and build one. You will watch every Qloo question in the trail as it is asked. If a name is ambiguous, the agent stops and asks "which did you mean?".
 
 ## If you only have 60 seconds
 
-Open **See showcase briefs**, open the Indore cafe brief, click one Why-chip, scroll to Taste proof. Showcase briefs are pre-generated on the server, so they open instantly.
+Open the Chicago showcase. Click one **Why** button, then jump to **Taste proof** and **Monday list**.
 
-## Other prompts that work well
+## Also worth trying
 
-- **Find my audience**: "I am a ceramic artist making handmade, Japanese-inspired tableware. Find the audience that would love it and where to reach them." City: London.
-- **I know my audience**: "I am opening a cafe in Indore for young professionals who love indie music and slow living." City: Indore.
+- **Refine:** dislike an artist and like another, then click **Refine brief**. Only the touched sections re-run, and the disliked artist is excluded in the Qloo query itself.
+- **Share:** a shared `/b#...` link opens with a "Shared link, verified" banner. An edited link shows as unverified.
+- **Compare:** run the same audience in a second city to see how the look and hotspots change.
 
 ## What to take away
 
-1. Every item in the brief links to a real Qloo result.
-2. A grounding score computed by code, with failures shown.
-3. A comparison against a plain LLM, scored by Qloo.
-4. Feedback goes back to Qloo as filters, not back to the LLM as vibes.
+1. Every recommendation cites a Qloo result you can open, and code removes anything that doesn't.
+2. The look of the room comes from the decor and ambience tags of real local places this audience loves.
+3. Taste Proof checks a plain AI answer against Qloo, and Qloo is the referee, not us.
+4. The output is a Monday list of actions, not just a page to read.

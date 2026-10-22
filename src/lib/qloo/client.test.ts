@@ -1,6 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createQlooClient } from "./client";
 import { QlooError } from "./errors";
+import { getQuota, recordRateLimitHeaders, resetQuota } from "./quota";
 import { ENTITY_TYPES } from "./types";
 
 const BASE = "https://hackathon.api.qloo.com";
@@ -454,5 +455,87 @@ describe("cache lifetime", () => {
     await client.search({ query: "x" });
     await client.insights({ type: ENTITY_TYPES.place, locationQuery: "Brooklyn" });
     expect(fetchImpl).toHaveBeenCalledTimes(3);
+  });
+});
+
+const rateHeaders = (h: Record<string, string>): Record<string, string> => ({ "content-type": "application/json", ...h });
+const withHeaders = (body: unknown, h: Record<string, string>, status = 200): Response =>
+  new Response(JSON.stringify(body), { status, headers: rateHeaders(h) });
+
+describe("quota headers and per-second pacing", () => {
+  beforeEach(() => resetQuota());
+  afterEach(() => resetQuota());
+
+  it("records the latest month and second headers from every response", async () => {
+    const { client } = makeClient(() =>
+      withHeaders(entityBody, {
+        "x-month-ratelimit-limit": "50000",
+        "x-month-ratelimit-remaining": "42900",
+        "x-month-ratelimit-reset": "2548800",
+        "x-second-ratelimit-limit": "10",
+        "x-second-ratelimit-remaining": "9",
+        "x-second-ratelimit-reset": "1",
+      }),
+    );
+    await client.search({ query: "x" });
+    expect(getQuota().month?.remaining).toBe(42900);
+    expect(getQuota().second?.remaining).toBe(9);
+  });
+
+  it("records headers from a 429 too", async () => {
+    const { client } = makeClient(() => withHeaders({}, { "x-second-ratelimit-remaining": "0", "x-second-ratelimit-reset": "1" }, 429));
+    await client.search({ query: "x" }).catch(() => undefined);
+    expect(getQuota().second?.remaining).toBe(0);
+  });
+
+  it("waits for the second window to reset before the next request", async () => {
+    recordRateLimitHeaders(new Headers({ "x-second-ratelimit-remaining": "0", "x-second-ratelimit-reset": "1" }), Date.now());
+    const sleep = vi.fn(async () => undefined);
+    const fetchImpl = vi.fn(async () => jsonResponse(entityBody));
+    const client = createQlooClient({ apiKey: KEY, baseUrl: BASE, mode: "live", fetchImpl: fetchImpl as unknown as typeof fetch, retry: { sleep }, minGapMs: 0 });
+    await client.search({ query: "x" });
+    expect(sleep).toHaveBeenCalledTimes(1);
+    const ms = (sleep.mock.calls[0] as unknown as [number])[0];
+    expect(ms).toBeGreaterThan(500);
+    expect(ms).toBeLessThanOrEqual(1000);
+  });
+
+  it("does not wait while the second allowance has room", async () => {
+    recordRateLimitHeaders(new Headers({ "x-second-ratelimit-remaining": "6", "x-second-ratelimit-reset": "1" }), Date.now());
+    const sleep = vi.fn(async () => undefined);
+    const client = createQlooClient({ apiKey: KEY, baseUrl: BASE, mode: "live", fetchImpl: (async () => jsonResponse(entityBody)) as unknown as typeof fetch, retry: { sleep }, minGapMs: 0 });
+    await client.search({ query: "x" });
+    expect(sleep).not.toHaveBeenCalled();
+  });
+
+  it("retries a 429 only after the reset it announced", async () => {
+    const sleep = vi.fn(async () => undefined);
+    let call = 0;
+    const fetchImpl = vi.fn(async () =>
+      ++call === 1
+        ? withHeaders({}, { "x-second-ratelimit-remaining": "0", "x-second-ratelimit-reset": "1" }, 429)
+        : jsonResponse(entityBody),
+    );
+    const client = createQlooClient({ apiKey: KEY, baseUrl: BASE, mode: "live", fetchImpl: fetchImpl as unknown as typeof fetch, retry: { sleep, baseDelayMs: 10, random: () => 0.5 }, minGapMs: 0 });
+    expect((await client.search({ query: "x" })).data).toHaveLength(1);
+    const waits = sleep.mock.calls.map((c) => (c as unknown as [number])[0]);
+    expect(Math.max(...waits)).toBeGreaterThan(500);
+  });
+
+  it("does not retry a 429 when the month allowance is spent", async () => {
+    const fetchImpl = vi.fn(async () => withHeaders({}, { "x-month-ratelimit-remaining": "0", "x-month-ratelimit-limit": "50000" }, 429));
+    const client = createQlooClient({ apiKey: KEY, baseUrl: BASE, mode: "live", fetchImpl: fetchImpl as unknown as typeof fetch, retry: { sleep: noSleep }, minGapMs: 0 });
+    await expect(client.search({ query: "x" })).rejects.toBeInstanceOf(QlooError);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not send a hedged duplicate when two or fewer requests remain this second", async () => {
+    const hang = (init?: RequestInit): Promise<Response> =>
+      new Promise<Response>((_r, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError"))));
+    recordRateLimitHeaders(new Headers({ "x-second-ratelimit-remaining": "2", "x-second-ratelimit-reset": "60" }), Date.now());
+    const fetchImpl = vi.fn(async (_u: string | URL | Request, init?: RequestInit) => hang(init));
+    const client = createQlooClient({ apiKey: KEY, baseUrl: BASE, mode: "live", fetchImpl: fetchImpl as unknown as typeof fetch, timeoutMs: 120, hedgeAfterMs: 20, retry: { sleep: noSleep }, minGapMs: 0 });
+    await client.search({ query: "x" }).catch(() => undefined);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,11 +1,17 @@
 import type { Brief, Item } from "./agent/brief";
 import { isEntityItem } from "./agent/menuRule";
 import type { Evidence } from "./agent/ledger";
+import { tidyNote } from "./sentences";
 
 /**
  * The "Monday list": what a founder can actually do on Monday morning, taken from a finished brief. Pure: the same brief
  * always gives the same list, and nothing here comes from anywhere but the brief and the evidence it cites.
  */
+
+export type MenuKind = "idea" | "collab";
+
+/** How each menu entry is labelled in the list and its exports. */
+export const MENU_KIND_LABEL: Readonly<Record<MenuKind, string>> = { idea: "Menu idea", collab: "Brand collab" };
 
 export type MondayList = {
   readonly title: string;
@@ -16,7 +22,7 @@ export type MondayList = {
   /** Rooms worth visiting before opening. */
   readonly places: readonly { readonly name: string; readonly where?: string }[];
   /** Menu or merch ideas for the board. */
-  readonly menu: readonly { readonly name: string; readonly why?: string }[];
+  readonly menu: readonly { readonly name: string; readonly kind: MenuKind; readonly why?: string }[];
   readonly copy: readonly string[];
   /** Neighbourhoods to hand out flyers in. */
   readonly flyers: readonly { readonly name: string; readonly note?: string }[];
@@ -51,7 +57,11 @@ function menuIdeas(brief: Brief, evidence: Readonly<Record<string, Evidence>>): 
   const ideas = brief.pairings.filter((p) => !isEntityItem(p, ledger));
   const brands = brief.pairings.filter((p) => isEntityItem(p, ledger));
   const pick = [...ideas, ...brands].slice(0, MENU_IDEAS);
-  return pick.map((p) => ({ name: isEntityItem(p, ledger) ? `Collab: ${p.label}` : p.label, ...(p.detail ? { why: p.detail } : {}) }));
+  return pick.map((p) => ({
+    name: p.label,
+    kind: isEntityItem(p, ledger) ? ("collab" as const) : ("idea" as const),
+    ...(p.detail ? { why: tidyNote(p.detail) } : {}),
+  }));
 }
 
 export function buildMondayList(brief: Brief, evidence: Readonly<Record<string, Evidence>>): MondayList {
@@ -72,6 +82,13 @@ export function buildMondayList(brief: Brief, evidence: Readonly<Record<string, 
       .slice(0, FLYER_AREAS)
       .map((h) => ({ name: h.label, ...(h.detail ? { note: h.detail } : {}) })),
   };
+}
+
+/** The page subtitle: the title, plus the city unless the title already says it ("Chicago, Chicago" otherwise). */
+export function mondaySubtitle(m: Pick<MondayList, "title" | "city">): string {
+  const city = m.city?.trim();
+  const named = city !== undefined && city !== "" && !m.title.toLowerCase().includes(city.toLowerCase());
+  return named ? `${m.title}, ${city}` : m.title;
 }
 
 /** True when the list has nothing to act on (every part empty). */
