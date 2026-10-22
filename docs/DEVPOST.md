@@ -32,6 +32,23 @@ TasteForge gives a café founder (or the interior designer working for them) tha
 
 Every recommendation cites a Qloo result you can open. Code, not the prompt, removes any item without a valid citation. Audiences are described by what they love, never by who they are. No personal data is collected or sent to Qloo.
 
+## Walk through it (no video needed)
+
+The gallery images follow this path, and the live site has the same briefs ready to open with no waiting.
+
+1. **Start on the home page (image 1).** The headline says what it is: a brief for your café, with receipts. Below it are six finished briefs built by the same agent: a Chicago record-store bar, an Indore café, a New York wine bar, a Paris pop-up, a Brooklyn boutique and a London ceramics studio. Each card shows its palette and its citation coverage. Open the Chicago one.
+2. **The brief cover (image 2).** A title, the palette drawn as bands, and a stamp showing what share of the brief cites a Qloo record. A menu across the top jumps between sections: Audience, Look, Sound, Pairings, Where, Voice, Taste Proof and Monday list.
+3. **The audience.** Who this crowd is, described by what they love: films, shows and taste signals Qloo says they over-index on. Age and gender skew appear only as context. Picks ranked with the city's location signal carry a small "Popular with Chicago listeners" chip.
+4. **The look (image 3).** Four or five colours with real names. They weren't invented: code derives them from the tags Qloo attached to real Chicago places this audience likes (decor and ambience first, then genre and cuisine), and each swatch is captioned with the tags behind it. Lighting and materials follow, then **reference places**: real local rooms with addresses, so the founder can go and stand in them.
+5. **The sound.** A playlist card of artists this crowd plays, each with an "Open in Spotify" link.
+6. **Pairings, where they are, and voice.** Brands this audience over-indexes on (collaboration ideas), a menu idea built only from Qloo's cuisine and dish tags, a map of the neighbourhoods where the crowd clusters (from Qloo's heatmap), and three short lines of copy in their language.
+7. **Open any "why" (image 4).** Every line has a "why" button. It opens the exact Qloo question in plain words (for example, "Places in Chicago liked by people who like…"), what Qloo returned, and one sentence on why this pick follows. The raw query is one click further down for engineers.
+8. **Taste Proof (image 5).** The same question went to a plain AI with no Qloo data, and Qloo checked every pick on both sides. The panel leads with a one-sentence verdict, then shows which picks Qloo could verify in the city and which it couldn't, as dot rows anyone can read. "Couldn't verify" covers names Qloo doesn't have, names of the wrong type, and places that exist only in another city. We never call them invented.
+9. **Change it.** Each item has 👍, 👎 and 🔒. Dislike an artist and press **Refine**: only the affected section is asked again, the disliked item is sent to Qloo as an exclusion so it can't come back, locked items stay word for word, and a "What changed" note lists the difference. **Compare with another city** runs the same audience in, say, London and shows what's only in A, what's only in B, and what both share.
+10. **The Monday list (image 6).** The brief becomes a to-do list: the playlist, the palette as a downloadable PNG, three places to visit, a menu idea and a brand collab, three copy lines, and the neighbourhoods to hand out flyers in. It can be downloaded, printed or copied. **Copy share link** gives a link that opens the same brief read-only, with a "verified" banner because the evidence is signed by the server.
+
+**Try your own (about a minute):** on the home page choose "Brief your own project", describe the place in a sentence (for example, "a slow-coffee bar for young professionals who like indie folk"), pick a city, and start it. You watch the agent work live: each Qloo question appears as it's asked, with what came back, until the brief opens. If many people are using it at once, a "high demand" note says how long the wait is.
+
 ## Why not just ask ChatGPT?
 
 We tested it with 20 prompts in 5 cities (Indore, London, Brooklyn, Chicago, Paris), checked against live Qloo. Qloo **couldn't verify 30% of a plain LLM's 276 picks** in the requested city (26% of its places). We sorted the 84 misses with AI assistance (a judgement from general knowledge, not a per-name check):
