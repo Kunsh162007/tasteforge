@@ -14,7 +14,7 @@ Made for independent café, bar and restaurant founders before opening, and the 
 
 ## Why not just ask ChatGPT?
 
-In our 20-prompt, 5-city benchmark, **Qloo couldn't verify 30% of a plain LLM's 276 picks** in the requested city (26% of its places). We classified all 84 misses by hand: **10 likely invented, 54 real but not in Qloo or listed under another type** (authors named as artists, for example), **15 only in another city**, 5 unclassified. So the problem isn't that the chatbot invents most things. The problem is that you can't tell which picks are real, local and checkable. TasteForge's rate is 0% of 312 picks. That's by construction: it can only return what Qloo returned. On audience fit, the two roughly agree, and we don't claim a fit advantage. Details: [docs/BENCHMARK.md](docs/BENCHMARK.md).
+In our 20-prompt, 5-city benchmark, **Qloo couldn't verify 30% of a plain LLM's 276 picks** in the requested city (26% of its places). We sorted the 84 misses with AI assistance (judgement from general knowledge, not a per-name check): **10 likely invented, 54 real but not in Qloo or listed under another type** (authors named as artists, for example), **15 only in another city**, 5 unclassified. So the problem isn't that the chatbot invents most things. The problem is that you can't tell which picks are real, local and checkable. TasteForge's rate is 0% of 312 picks. That's by construction: it can only return what Qloo returned. On audience fit, the two roughly agree, and we don't claim a fit advantage. Details: [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 Every brief runs the same check live: **Taste Proof** asks a plain LLM the same question and shows which of its picks Qloo could verify.
 
@@ -86,7 +86,7 @@ Answers "is a TasteForge brief safer to use than a plain LLM answer?" with Qloo'
 
 Proof failure never fails the brief. Honest framing: the score measures fit with the audience's Qloo taste signals, not quality in general.
 
-Benchmark numbers, the hand classification of the misses and the caveats are in [docs/BENCHMARK.md](docs/BENCHMARK.md) (reproduce with `npm run benchmark`). Repeat runs of the same prompt share about 80% of their picks (3 prompts, 2 runs each, indicative).
+Benchmark numbers, the classification of the misses and the caveats are in [docs/BENCHMARK.md](docs/BENCHMARK.md) (reproduce with `npm run benchmark`). Repeat runs of the same prompt share about 80% of their picks (3 prompts, 2 runs each, indicative).
 
 What it claims, and what it does not: every TasteForge pick is a Qloo result and traceable to its record, and picks a plain answer names that Qloo cannot verify in the city are shown as such. It does not claim a fit advantage, and it does not claim that unverified picks are fake.
 

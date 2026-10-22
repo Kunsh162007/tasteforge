@@ -34,7 +34,7 @@ Every recommendation cites a Qloo result you can open. Code, not the prompt, rem
 
 ## Why not just ask ChatGPT?
 
-We tested it with 20 prompts in 5 cities (Indore, London, Brooklyn, Chicago, Paris), checked against live Qloo. Qloo **couldn't verify 30% of a plain LLM's 276 picks** in the requested city (26% of its places). We classified all 84 misses by hand:
+We tested it with 20 prompts in 5 cities (Indore, London, Brooklyn, Chicago, Paris), checked against live Qloo. Qloo **couldn't verify 30% of a plain LLM's 276 picks** in the requested city (26% of its places). We sorted the 84 misses with AI assistance (a judgement from general knowledge, not a per-name check):
 
 | What the unverified picks were | Picks |
 | --- | --- |
@@ -70,7 +70,7 @@ Next.js and TypeScript, streamed over Server-Sent Events so you watch every Qloo
 
 ## Challenges and accomplishments
 
-- **Being fair to the chatbot.** Our first matcher called real places "not found". It now searches every entity type, tolerates accents and suffixes, checks the city, and we classify the misses by hand.
+- **Being fair to the chatbot.** Our first matcher called real places "not found". It now searches every entity type, tolerates accents and suffixes, checks the city, and we sort the misses into categories, labelling that sorting as a judgement.
 - **Local taste.** An indie crowd in Indore first got US rock radio. Adding `signal.location.query` brought in local acts.
 - **Repeatable briefs.** Pick overlap between repeat runs rose from 17% to about 80% (3 prompts, 2 runs each; indicative).
 - In Taste Proof, Qloo is the referee, not us.

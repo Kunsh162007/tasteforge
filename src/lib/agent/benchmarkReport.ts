@@ -139,7 +139,7 @@ ${kindRows(base, mine).join("\n")}
 
 ## Classification of the baseline's unverified picks
 
-Every unverified baseline pick was classified by hand (the audit lives in \`scripts/benchmark-audit.json\`: names and classes only). Wrong-type and other-city follow from the Qloo search; the rest were checked against general knowledge and, where cheap, a web search. A pick with no evidence either way stays unclassified.
+Every unverified baseline pick was sorted with AI assistance from general knowledge, without a per-name web check, so treat "likely invented" as a judgement, not a verified fact (the audit lives in \`scripts/benchmark-audit.json\`: names and classes only). Wrong-type and other-city follow from the Qloo search; the rest were judged from general knowledge only. A pick with no evidence either way stays unclassified.
 
 ${breakdownTable(breakdown)}
 
