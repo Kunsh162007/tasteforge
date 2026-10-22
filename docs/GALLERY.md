@@ -5,7 +5,7 @@ Upload the images in this order, all 1600×900 PNGs captured from the live site 
 | # | File | Caption (copy-paste) |
 |---|---|---|
 | 1 | `docs/media/01-home.png` | A brief for your café, with receipts: describe your place, and Qloo's taste graph tells you who it's for. |
-| 2 | `docs/media/02-brief-cover.png` | A real brief for a Chicago record-store bar. 100% of its lines cite a Qloo record; code removes anything that doesn't. |
+| 2 | `docs/media/02-brief-cover.png` | A real brief for a Chicago record-store bar. 94% of its lines cite a Qloo record; code removes anything that doesn't. |
 | 3 | `docs/media/03-the-look.png` | The look, read from the tags of real Chicago places this crowd loves. Every swatch names the tags behind it. |
 | 4 | `docs/media/04-evidence-drawer.png` | Every line has a receipt: "why" opens the exact Qloo question and what it returned. |
 | 5 | `docs/media/05-taste-proof.png` | Taste Proof: Qloo checks a plain AI answer. 4 of its 16 picks couldn't be verified in Chicago; every TasteForge pick could. |

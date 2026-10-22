@@ -30,6 +30,28 @@ describe("swatchCaptions tag-only", () => {
     const [caption] = swatchCaptions([{ tags: ["Buddy's Burger", "Smoke House", "Steak", "Industrial"], evidence: ["ev_1"] }], ev);
     expect(caption).toEqual(["Industrial", "Steak"]);
   });
+
+  it("never captions with a dish tag, even in Qloo's own spelling ('Buddy S Burger')", () => {
+    const ev = {
+      ev_1: record("ev_1", [
+        ["urn:tag:specialty_dish:place:buddy_s_burger", "Buddy S Burger"],
+        ["urn:tag:cuisine:steak", "Steak"],
+      ]),
+    } as Record<string, Evidence>;
+    const [caption] = swatchCaptions([{ tags: ["Buddy S Burger", "Steak"], evidence: ["ev_1"] }], ev);
+    expect(caption).toEqual(["Steak"]);
+  });
+
+  it("falls back to the cited decor and ambience tags when no swatch tag qualifies", () => {
+    const ev = {
+      ev_1: record("ev_1", [
+        ["urn:tag:specialty_dish:place:buddy_s_burger", "Buddy S Burger"],
+        ["urn:tag:ambience:cozy", "Cozy"],
+      ]),
+    } as Record<string, Evidence>;
+    const [caption] = swatchCaptions([{ tags: ["Buddy S Burger"], evidence: ["ev_1"] }], ev);
+    expect(caption).toEqual(["Cozy"]);
+  });
 });
 
 describe("swatchCaptions", () => {

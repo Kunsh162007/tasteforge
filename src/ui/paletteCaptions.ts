@@ -1,11 +1,23 @@
 import { isNameLike, nameKey } from "@/lib/agent/colour/cues";
+import { fixPossessive } from "@/lib/qloo/displayName";
 import type { Evidence, Swatch } from "./contract";
 
 /** Most tags shown under one swatch. */
 export const CAPTION_TAGS = 2;
 
 const STYLE_PREFIXES = ["urn:tag:decor:", "urn:tag:ambience:"];
+/** Dish tags name a venue's signature plate ("Buddy S Burger"): fine as a colour cue, misleading as a style caption. */
+const DISH_PREFIXES = ["urn:tag:specialty_dish:"];
 const norm = (s: string): string => s.trim().toLowerCase();
+
+/** Names of the dish tags in the records a swatch cites. */
+function dishNames(swatch: Pick<Swatch, "evidence">, evidence: Readonly<Record<string, Evidence>>): Set<string> {
+  const out = new Set<string>();
+  for (const id of swatch.evidence) {
+    for (const t of evidence[id]?.tags ?? []) if (DISH_PREFIXES.some((p) => t.id.startsWith(p))) out.add(nameKey(t.name));
+  }
+  return out;
+}
 
 /** Names of the decor and ambience tags in the records a swatch cites (the tags that drive colour most directly). */
 function styleNames(swatch: Pick<Swatch, "evidence">, evidence: Readonly<Record<string, Evidence>>): Set<string> {
@@ -23,7 +35,15 @@ function styleNames(swatch: Pick<Swatch, "evidence">, evidence: Readonly<Record<
 function tagCaptionsOnly(swatch: Pick<Swatch, "tags" | "evidence">, evidence: Readonly<Record<string, Evidence>>): string[] {
   const entityNames = new Set(Object.values(evidence).flatMap((r) => (r.entities ?? []).map((e) => nameKey(e.name))));
   const cited = new Set(swatch.evidence.flatMap((id) => (evidence[id]?.tags ?? []).map((t) => nameKey(t.name))));
-  return (swatch.tags ?? []).filter((t) => (cited.size === 0 || cited.has(nameKey(t))) && !isNameLike(t, entityNames));
+  const dishes = dishNames(swatch, evidence);
+  return (swatch.tags ?? [])
+    .filter((t) => (cited.size === 0 || cited.has(nameKey(t))) && !isNameLike(t, entityNames) && !dishes.has(nameKey(t)))
+    .map(fixPossessive);
+}
+
+/** Style tag names (original casing) from the records a swatch cites: the fallback when no swatch tag qualifies. */
+function citedStyleTags(swatch: Pick<Swatch, "evidence">, evidence: Readonly<Record<string, Evidence>>): string[] {
+  return swatch.evidence.flatMap((id) => (evidence[id]?.tags ?? []).filter((t) => STYLE_PREFIXES.some((p) => t.id.startsWith(p))).map((t) => fixPossessive(t.name)));
 }
 
 /**
@@ -36,7 +56,8 @@ export function swatchCaptions(palette: readonly Pick<Swatch, "tags" | "evidence
   const shown = new Set<string>();
   return palette.map((s) => {
     const style = styleNames(s, evidence);
-    const tags = tagCaptionsOnly(s, evidence);
+    const own = tagCaptionsOnly(s, evidence);
+    const tags = own.length > 0 ? own : citedStyleTags(s, evidence);
     const ordered = [...tags.filter((t) => style.has(norm(t))), ...tags.filter((t) => !style.has(norm(t)))];
     const fresh = ordered.filter((t) => !used.has(norm(t)));
     const picked = fresh.slice(0, CAPTION_TAGS);
