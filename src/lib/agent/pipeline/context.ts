@@ -1,5 +1,5 @@
 import { lookupCityCentre } from "@/lib/geo/forward";
-import type { ReverseGeocoder } from "@/lib/geo/nominatim";
+import type { GeoArea, ReverseGeocoder } from "@/lib/geo/nominatim";
 import type { QlooClient } from "@/lib/qloo";
 import type { AgentEvent, SectionKey } from "../events";
 import type { BrandScope } from "../brandScope";
@@ -46,6 +46,8 @@ export type PipelineCtx = {
   readonly brandScope: BrandScope;
   /** Centre and reach of the requested city, for the heatmap. */
   readonly centreOf: CentreResolver;
+  /** Reverse lookups of heatmap cells, by rounded position; started once, shared by the prefetch and the final naming. */
+  readonly areas: Map<string, Promise<GeoArea | undefined>>;
   readonly box: { ledger: Ledger };
   readonly stats: Map<SectionKey, StatAcc>;
   readonly counter: { n: number };
@@ -72,6 +74,7 @@ export function createCtx(o: Pick<PipelineCtx, "qloo" | "emit" | "now" | "geocod
     centreOf: o.centreOf ?? createCentreResolver(o.geocode ? lookupCityCentre : undefined),
     qloo: withPlaceFacts(o.qloo, facts),
     facts,
+    areas: new Map(),
     box: { ledger: EMPTY_LEDGER },
     stats: new Map(),
     counter: { n: 0 },
@@ -210,6 +213,19 @@ export function viaTool(
   return work;
 }
 
+/** The value of `work`, or undefined if it takes longer than `ms`. */
+export async function raceValue<T>(work: Promise<T>, ms: number): Promise<T | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => resolve(undefined), ms);
+  });
+  try {
+    return await Promise.race([work, late]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 const sleep = (ms: number): Promise<"timeout"> =>
   new Promise((resolve) => {
     const t = setTimeout(() => resolve("timeout"), ms);
@@ -230,8 +246,9 @@ export async function raceTimeout(work: Promise<unknown>, ms: number): Promise<"
  * closed: calls still in flight are reported as left out (so the trail never shows a call that never ends) and any
  * late answer is dropped. Returns how many calls were left out.
  */
-export async function closeRun(ctx: PipelineCtx, optionalWaitMs: number): Promise<number> {
+export async function closeRun(ctx: PipelineCtx, optionalWaitMs: number, beforeClose?: () => Promise<void>): Promise<number> {
   if (ctx.optional.length > 0) await raceTimeout(Promise.allSettled(ctx.optional), optionalWaitMs);
+  await beforeClose?.().catch(() => undefined);
   withoutUnnamedHotspots(ctx);
   ctx.run.closed = true;
   let skipped = 0;

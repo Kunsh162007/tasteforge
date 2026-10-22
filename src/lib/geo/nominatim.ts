@@ -49,8 +49,9 @@ export function pickAreaName(address: Readonly<Record<string, unknown>> | undefi
 }
 
 /** Land uses and features that are not neighbourhoods: an audience does not live on a runway or in a rail yard. */
-const NON_RESIDENTIAL_CATEGORIES = new Set(["aeroway", "military", "industrial", "railway", "harbour", "man_made"]);
-const NON_RESIDENTIAL_LANDUSE = new Set(["industrial", "commercial", "retail", "railway", "military", "quarry", "port", "garages", "landfill"]);
+const NON_RESIDENTIAL_CATEGORIES = new Set(["aeroway", "military", "industrial", "harbour"]);
+/** Commercial and retail land are the downtown of a big city, where much of the audience gathers, so they are not on this list. */
+const NON_RESIDENTIAL_LANDUSE = new Set(["industrial", "railway", "military", "quarry", "port", "garages", "landfill"]);
 const AIRPORT_NAME = /\b(airport|airfield|aerodrome|airbase|o'hare|heathrow|gatwick|stansted|luton|laguardia|jfk)\b/i;
 
 type NominatimBody = { readonly category?: unknown; readonly type?: unknown; readonly name?: unknown; readonly address?: Record<string, unknown> };

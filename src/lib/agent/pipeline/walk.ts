@@ -1,13 +1,12 @@
 import type { SectionKey } from "../events";
 import type { Evidence } from "../ledger";
 import { NO_EXCLUSIONS, type Exclusions } from "../refine/plan";
-import { isUnnamedArea, withHeatmapEntities, withTags } from "../summaries";
+import { withHeatmapEntities, withTags } from "../summaries";
 import { ENTITY_TYPES, type QlooEntity } from "@/lib/qloo";
 import type { EvidenceEntity } from "../ledger";
-import { isUsable, noteFilled, raceTimeout, replaceEvidence, setGuard, viaTool, type PipelineCtx } from "./context";
-import { nameAreaFromPlaces, type NearbyPlace } from "./areaNames";
+import { isUsable, noteFilled, raceTimeout, raceValue, replaceEvidence, setGuard, viaTool, type PipelineCtx } from "./context";
+import { finalizeHotspots, HOTSPOT_BUDGET_MS, prefetchAreas } from "./hotspots";
 import { scrubEntities } from "./guard";
-import { ledgerEntities } from "./minimum";
 import { baselineShares, menuTags, rankStyleTags } from "./placeFacts";
 import type { Signals } from "./resolve";
 import { signalArgsFor, venueTagIds } from "./routing";
@@ -182,79 +181,8 @@ async function walkPlaces(ctx: PipelineCtx, s: Signals, city: string, x: Exclusi
   sharpenMenu(ctx, menu, ids);
 }
 
-/** The value of `work`, or undefined if it takes longer than `ms`. */
-async function raceValue<T>(work: Promise<T>, ms: number): Promise<T | undefined> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<undefined>((resolve) => {
-    timer = setTimeout(() => resolve(undefined), ms);
-  });
-  try {
-    return await Promise.race([work, late]);
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
 async function walkPairings(ctx: PipelineCtx, s: Signals, city: string | undefined, x: Exclusions): Promise<void> {
   await viaTool(ctx, "pairings", "qloo_insights", { type: "brand", ...signalArgsFor("brand", s), ...localArgs(city), ...excludeArgs({ ...x, tagIds: [] }), take: LIST_TAKE });
-}
-
-/** Hotspots shown per brief, and how many candidates are checked to find that many real neighbourhoods. */
-const MAX_HOTSPOTS = 5;
-const CANDIDATES_TO_CHECK = 8;
-/** The reference places give Qloo-based hotspot names; wait this long for them before falling back to the geocoder alone. */
-const PLACES_WAIT_MS = 12_000;
-
-const NOTHING_NAMEABLE = "None of the hotspot cells could be given a neighbourhood name (or they lay at an airport or on industrial land).";
-
-const lower = (s: string): string => s.trim().toLowerCase();
-
-/** A country or region is never a neighbourhood (a London cell once came back as "United Kingdom"). */
-const WIDER_AREAS = new Set(["united kingdom", "united states", "england", "scotland", "wales", "greater london", "india", "france", "usa", "new york state", "illinois", "madhya pradesh", "ile-de-france", "île-de-france"]);
-
-/** The bare city, "City of X" or "X City" says nothing about where in the city; "Brooklyn Heights" does. */
-function isGenericCityName(name: string, city: string): boolean {
-  const n = lower(name);
-  const c = lower(city);
-  return n === c || n === `${c} city` || n === `city of ${c}` || n === `${c} district` || n === `${c} division` || WIDER_AREAS.has(n);
-}
-
-function isSpecificName(name: string, city: string, taken: readonly { readonly name: string }[]): boolean {
-  return !isGenericCityName(name, city) && !taken.some((e) => lower(e.name) === lower(name));
-}
-
-/** Top reference places with a position and a street address: what hotspots are named from. */
-function placesWithAddress(ctx: PipelineCtx): NearbyPlace[] {
-  return ledgerEntities(ctx.box.ledger, "place").flatMap(({ entity }) => {
-    const address = ctx.facts.get(entity.id)?.address;
-    return address && entity.lat !== undefined && entity.lon !== undefined ? [{ id: entity.id, lat: entity.lat, lon: entity.lon, address }] : [];
-  });
-}
-
-/**
- * Turns hotspot candidates into the hotspots shown. A cell is kept only with a real neighbourhood name: Qloo's own data
- * comes first (the area its nearest reference places name in their addresses, "Vijay Nagar"), then reverse geocoding
- * (best effort, serial and cached). Cells at airports or on industrial land (where OpenStreetMap says so) and cells
- * nothing can name are dropped: the brief never shows raw coordinates.
- */
-async function nameHotspots(ctx: PipelineCtx, heat: Evidence, city: string, placesReady: Promise<unknown> | undefined): Promise<void> {
-  const candidates = heat.entities;
-  if (!candidates || candidates.length === 0) return;
-  if (placesReady) await raceValue(placesReady, PLACES_WAIT_MS);
-  const places = placesWithAddress(ctx);
-  const kept: EvidenceEntity[] = [];
-  for (const e of candidates.slice(0, CANDIDATES_TO_CHECK)) {
-    if (kept.length === MAX_HOTSPOTS) break;
-    if (e.lat === undefined || e.lon === undefined) continue;
-    const area = ctx.geocode ? await ctx.geocode(e.lat, e.lon) : undefined;
-    if (area && !area.residential) continue;
-    const taken = new Set(kept.map((k) => lower(k.name)));
-    let name = isUnnamedArea(e.name) ? nameAreaFromPlaces({ lat: e.lat, lon: e.lon }, places, city, taken) : e.name;
-    // verified live 2026-10-20: OpenStreetMap often only knows the city district ("Indore City"); a generic or repeated name says nothing.
-    if (!name && area && isSpecificName(area.name, city, kept)) name = area.name;
-    if (name) kept.push({ ...e, name });
-  }
-  replaceEvidence(ctx, withHeatmapEntities(heat, kept, NOTHING_NAMEABLE));
 }
 
 /** Drops hotspots the user disliked (heatmap has no exclude parameter, so this is done after the call). */
@@ -265,9 +193,11 @@ function withoutCells(ctx: PipelineCtx, heat: Evidence, cellIds: readonly string
   return kept;
 }
 
-async function walkWhere(ctx: PipelineCtx, s: Signals, city: string, x: Exclusions, placesReady: Promise<unknown> | undefined): Promise<void> {
+async function walkWhere(ctx: PipelineCtx, s: Signals, city: string, x: Exclusions): Promise<void> {
   const heat = await viaTool(ctx, "where", "qloo_heatmap", { location: city, ...signalArgsFor("heatmap", s) });
-  if (heat) await nameHotspots(ctx, withoutCells(ctx, heat, x.cellIds), city, placesReady).catch(() => undefined);
+  if (!heat) return;
+  // Names come after the walk (finalizeHotspots); the reverse lookups start now so they run beside the rest of it.
+  prefetchAreas(ctx, withoutCells(ctx, heat, x.cellIds));
 }
 
 export type WalkOptions = {
@@ -305,7 +235,7 @@ export async function walkSections(
   const branches: Promise<void>[] = [];
   const places = city && (has("aesthetic") || has("pairings")) ? walkPlaces(ctx, signals, city, x) : undefined;
   if (places) branches.push(places);
-  if (city && has("where")) branches.push(walkWhere(ctx, signals, city, x, places));
+  if (city && has("where")) branches.push(walkWhere(ctx, signals, city, x));
   if (has("audience")) branches.push(walkAudience(ctx, signals, city, x));
   if (has("sound")) branches.push(walkSound(ctx, signals, city, x));
   if (has("pairings")) branches.push(walkPairings(ctx, signals, city, x));
@@ -313,6 +243,8 @@ export async function walkSections(
   if (opts.deadlineAt === undefined) await core;
   const outcome = opts.deadlineAt === undefined ? "done" : await raceTimeout(core, opts.deadlineAt - Date.now());
   // Refine and compare have no later stage to overlap with, so they give optional work a short grace period here.
+  // Hotspot names get their own allowance: the walk's soft deadline never costs the brief its map.
+  if (city && has("where")) await finalizeHotspots(ctx, city, HOTSPOT_BUDGET_MS);
   if (!opts.deferOptional && outcome === "done") await raceTimeout(Promise.allSettled(ctx.optional), OPTIONAL_BUDGET_MS);
   return { partial: outcome === "timeout" };
 }

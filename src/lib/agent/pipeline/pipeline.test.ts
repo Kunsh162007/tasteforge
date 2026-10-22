@@ -361,13 +361,13 @@ describe("hotspot naming", () => {
     };
     const { result } = await run(goodRoutes(), { qloo: unnamedHeat, geocode });
     const heat = result.ledger.records.find((r) => r.summary.includes("heatmap hotspots"));
-    // The second cell stays unnamed, so it is not shown: the brief never carries raw coordinates.
-    expect(heat?.entities?.map((e) => e.name)).toEqual(["Vijay Nagar"]);
+    // The second cell gets a neutral label from the nearest reference place: it lies in the city, so it is not hidden.
+    expect(heat?.entities?.map((e) => e.name)).toEqual(["Vijay Nagar", expect.stringMatching(/^(Near |w[w-]* Brooklyn)/)]);
     expect(heat?.summary).toContain("hottest: Vijay Nagar");
     expect(seen).toHaveLength(2);
   });
 
-  it("hides unnamed hotspots when nothing can name them, and keeps cells that already have names", async () => {
+  it("labels hotspots neutrally when nothing can name them (never raw coordinates), and keeps cells that already have names", async () => {
     const { result } = await run(goodRoutes(), { qloo: unnamedHeat });
     const heat = result.ledger.records.find((r) => r.endpoint.includes("heatmap"));
     expect((heat?.entities ?? []).some((e) => e.name.startsWith("Area near"))).toBe(false);

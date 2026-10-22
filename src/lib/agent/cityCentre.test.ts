@@ -39,3 +39,18 @@ describe("createCentreResolver", () => {
     expect(await createCentreResolver(async () => Promise.reject(new Error("down")))("Springfield")).toBeUndefined();
   });
 });
+
+describe("knownCentre regions and boroughs", () => {
+  it("gives Brooklyn its own centre however the request spells it, not Manhattan's or the whole city's", () => {
+    for (const spelling of ["Brooklyn", "Brooklyn, New York", "Brooklyn NY", "brooklyn new york usa"]) {
+      expect(knownCentre(spelling)).toMatchObject({ lat: 40.6501, radiusKm: 12 });
+    }
+    expect(knownCentre("Paris, France")?.radiusKm).toBe(15);
+    expect(knownCentre("Paris France")?.lat).toBeCloseTo(48.86, 1);
+  });
+
+  it("does not mistake another place for a known one just because it starts with the same word", () => {
+    expect(knownCentre("Portland Maine")).toBeUndefined();
+    expect(knownCentre("York")).toBeUndefined();
+  });
+});

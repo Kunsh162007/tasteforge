@@ -19,6 +19,9 @@ const KNOWN: Readonly<Record<string, CityCentre>> = {
   nyc: c(40.7128, -74.006, 25),
   manhattan: c(40.7831, -73.9712, 12),
   brooklyn: c(40.6501, -73.9496, 12),
+  queens: c(40.7282, -73.7949, 14),
+  bronx: c(40.8448, -73.8648, 10),
+  "staten island": c(40.5795, -74.1502, 11),
   london: c(51.5074, -0.1278, 25),
   chicago: c(41.8781, -87.6298, 20),
   paris: c(48.8566, 2.3522, 15),
@@ -54,9 +57,22 @@ const key = (city: string): string =>
     .replace(/\s+/g, " ")
     .trim();
 
-/** The built-in centre of a well-known city, or undefined. Needs no network. */
+/** Words that only say which country or state a city is in: "Brooklyn NY", "Paris France", "Chicago Illinois". */
+const REGION_WORDS = new Set(["ny", "nyc", "new", "york", "usa", "us", "united", "states", "america", "uk", "kingdom", "england", "france", "il", "illinois", "india", "mp", "madhya", "pradesh", "ca", "california", "tx", "texas", "wa", "washington", "ma", "massachusetts", "or", "oregon", "germany", "japan", "canada", "australia", "spain", "portugal", "netherlands"]);
+
+/**
+ * The built-in centre of a well-known city, or undefined. Needs no network. A trailing region ("Brooklyn, New York",
+ * "Paris France") is ignored, so a request for Brooklyn gets Brooklyn's own centre and not Manhattan's.
+ */
 export function knownCentre(city: string): CityCentre | undefined {
-  return KNOWN[key(city)];
+  const k = key(city);
+  if (KNOWN[k]) return KNOWN[k];
+  const words = k.split(" ");
+  for (let n = words.length - 1; n >= 1; n -= 1) {
+    const hit = KNOWN[words.slice(0, n).join(" ")];
+    if (hit && words.slice(n).every((w) => REGION_WORDS.has(w))) return hit;
+  }
+  return undefined;
 }
 
 /** Radius for a city whose size is only known from its bounding box (km across the longer side). */

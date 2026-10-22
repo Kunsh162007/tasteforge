@@ -123,6 +123,52 @@ describe("walkSections hotspot names", () => {
   });
 });
 
+describe("walkSections hotspots when naming fails (regression: 3 of 6 showcase briefs had no 'Where they are')", () => {
+  // Chicago cells inside the city's reach; Qloo names none, and the reference places' addresses name no neighbourhood.
+  const chicago = [
+    [41.938, -87.688],
+    [41.931, -87.714],
+    [41.889, -87.662],
+    [41.896, -87.703],
+    [41.8, -87.588],
+    [41.872, -87.626],
+  ].map(([latitude, longitude], i) => ({ geohash: `cell${i}`, latitude, longitude, affinity: 1 - i / 20 }));
+  const streetPlace = {
+    id: "P1",
+    name: "Empty Bottle",
+    type: "urn:entity:place",
+    affinity: 0.9,
+    location: { latitude: 41.9, longitude: -87.69 },
+    properties: { address: "1035 N Western Ave, Chicago, IL 60622" },
+  };
+  const chicagoQloo = {
+    ...qloo,
+    insights: async (p: Parameters<typeof qloo.insights>[0]) => (p.type === "urn:entity:place" ? { data: [streetPlace] } : qloo.insights(p)),
+    heatmap: async () => ({ data: chicago }),
+  };
+
+  it.each([
+    ["a geocoder that has nothing to say", async () => undefined],
+    ["a geocoder that fails (rate limited)", async () => Promise.reject(new Error("429"))],
+  ])("still lists 3 to 5 named hotspots with %s", async (_label, geocode) => {
+    const ctx = createCtx({ qloo: chicagoQloo, emit: () => undefined, geocode });
+    await walkSections(ctx, ["aesthetic", "where"], signals, "Chicago", NO_EXCLUSIONS);
+    const names = (ctx.box.ledger.records.find((r) => r.endpoint.includes("heatmap"))?.entities ?? []).map((e) => e.name);
+    expect(names.length).toBeGreaterThanOrEqual(3);
+    expect(names.length).toBeLessThanOrEqual(5);
+    expect(names.some((n) => n.startsWith("Area near"))).toBe(false);
+  });
+
+  it("names the hotspots even when the walk's soft deadline cut the other calls off", async () => {
+    const slow = { ...chicagoQloo, insights: () => new Promise<never>(() => undefined) };
+    const ctx = createCtx({ qloo: slow, emit: () => undefined, geocode: async () => undefined });
+    const outcome = await walkSections(ctx, ["audience", "where"], signals, "Chicago", NO_EXCLUSIONS, { deadlineAt: Date.now() + 50 });
+    expect(outcome.partial).toBe(true);
+    const names = (ctx.box.ledger.records.find((r) => r.endpoint.includes("heatmap"))?.entities ?? []).map((e) => e.name);
+    expect(names.length).toBeGreaterThanOrEqual(3);
+  });
+});
+
 describe("localised artist signal", () => {
   const sig = { entityIds: ["B1"], tagIds: ["urn:tag:genre:music:indie_rock"], entityNames: ["Muji"], tagNames: ["Indie - Rock"] };
   const withSearch = (types: string) => {

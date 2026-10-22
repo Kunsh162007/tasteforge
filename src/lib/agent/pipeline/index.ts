@@ -8,6 +8,7 @@ import type { Ledger } from "../ledger";
 import { brandScopeFor } from "../brandScope";
 import { dedupeBrief } from "../dedupe";
 import { fillHotspots } from "../hotspotFill";
+import { finalizeHotspots } from "./hotspots";
 import { validateBrief } from "../validator";
 import { sectionConfidence } from "./confidence";
 import { closeRun, createCtx, raceTimeout, snapshotStats, type PipelineCtx, type SectionStat } from "./context";
@@ -180,8 +181,9 @@ export async function runPipeline(o: PipelineOptions): Promise<PipelineResult> {
       : await boundedCritic(ctx, { llm, signals, city, expected: expectedSections(city) }, deadlineAt);
     const widened = walked.partial ? undefined : await boundedWiden(ctx, signals, city, deadlineAt);
     stage("critic", "done", [critic.detail === "coverage looks good" && widened ? undefined : critic.detail, widened].filter(Boolean).join(", "));
-    // Optional work (trending, extra TV, hotspot names) had the critic's time to land; it never delays synthesis further.
-    await closeRun(ctx, optionalUntil - Date.now());
+    // Optional work (trending, extra TV) had the critic's time to land; it never delays synthesis further.
+    // A heatmap that lands while optional work is awaited is still labelled (no network) before the run closes.
+    await closeRun(ctx, optionalUntil - Date.now(), () => finalizeHotspots(ctx, city, 0));
 
     stage("synthesis", "start");
     const draft = await synthesizeBrief({ llm, prompt: o.prompt, mode: o.mode, city, signals, ledger: ctx.box.ledger });
