@@ -12,7 +12,7 @@ export type CascadeOptions = {
   readonly now?: () => number;
   /** Called when a model fails and the next one is tried. */
   readonly onSwitch?: (from: string, to: string, error: LlmError) => void;
-  /** Called once per upstream request actually sent (feeds the daily budget). */
+  /** Called once per upstream request actually sent. */
   readonly onCall?: () => void;
   /** Cooldowns shared with other cascades, so a model cooling in one chain is skipped in the others too. */
   readonly cooldowns?: Map<string, number>;

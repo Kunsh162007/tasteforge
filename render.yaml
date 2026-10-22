@@ -14,8 +14,6 @@ services:
         value: live # needs QLOO_API_KEY set in the Render dashboard
       - key: QLOO_BASE_URL
         value: https://hackathon.api.qloo.com
-      - key: QLOO_MONTH_RESERVE
-        value: "2000" # live briefs pause when Qloo reports fewer monthly requests left (shared key, 50,000 a month)
       - key: QLOO_API_KEY
         sync: false # set in the Render dashboard
       # Two chains, tried in order; a model that hits a quota or outage cools down and the next one answers.
@@ -38,7 +36,5 @@ services:
         generateValue: true # lets npm run warm -- --regenerate rebuild the showcase (copy it into WARM_TOKEN locally)
       - key: MAX_CONCURRENT_BRIEFS
         value: "4"
-      - key: DAILY_LLM_BUDGET
-        value: "600"
       - key: SHOWCASE_WARM_ON_BOOT
         value: "1" # build the six showcase briefs one at a time right after boot; npm run warm waits for them

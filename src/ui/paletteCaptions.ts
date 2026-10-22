@@ -1,3 +1,4 @@
+import { isNameLike, nameKey } from "@/lib/agent/colour/cues";
 import type { Evidence, Swatch } from "./contract";
 
 /** Most tags shown under one swatch. */
@@ -16,6 +17,16 @@ function styleNames(swatch: Pick<Swatch, "evidence">, evidence: Readonly<Record<
 }
 
 /**
+ * Only Qloo tags may caption a swatch: a name that is a place, brand or artist in the evidence (or a possessive venue name)
+ * is dropped. When the swatch cites records with tags, a caption must also be one of those tags.
+ */
+function tagCaptionsOnly(swatch: Pick<Swatch, "tags" | "evidence">, evidence: Readonly<Record<string, Evidence>>): string[] {
+  const entityNames = new Set(Object.values(evidence).flatMap((r) => (r.entities ?? []).map((e) => nameKey(e.name))));
+  const cited = new Set(swatch.evidence.flatMap((id) => (evidence[id]?.tags ?? []).map((t) => nameKey(t.name))));
+  return (swatch.tags ?? []).filter((t) => (cited.size === 0 || cited.has(nameKey(t))) && !isNameLike(t, entityNames));
+}
+
+/**
  * Display only: the tags to show under each swatch. Decor, ambience and style tags come first (the swatch's own order
  * breaks ties), at most two per swatch, and a tag already shown under an earlier swatch gives way to one not yet used, so
  * two swatches never read the same. When every candidate is taken, a swatch keeps its first tag that makes its caption unique.
@@ -25,7 +36,7 @@ export function swatchCaptions(palette: readonly Pick<Swatch, "tags" | "evidence
   const shown = new Set<string>();
   return palette.map((s) => {
     const style = styleNames(s, evidence);
-    const tags = s.tags ?? [];
+    const tags = tagCaptionsOnly(s, evidence);
     const ordered = [...tags.filter((t) => style.has(norm(t))), ...tags.filter((t) => !style.has(norm(t)))];
     const fresh = ordered.filter((t) => !used.has(norm(t)));
     const picked = fresh.slice(0, CAPTION_TAGS);

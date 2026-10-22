@@ -19,7 +19,7 @@ export type Failure = {
   readonly message: string;
   /** Whether trying again may succeed (rate limits, outages, timeouts). */
   readonly retryable: boolean;
-  /** Key-free diagnostic for server logs / smoke tests, e.g. "groq rate_limit HTTP 429". */
+  /** Key-free diagnostic for server logs, e.g. "groq rate_limit HTTP 429". */
   readonly cause?: string;
 };
 

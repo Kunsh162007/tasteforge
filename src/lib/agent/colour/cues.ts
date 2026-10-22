@@ -46,6 +46,20 @@ function weightOf(score: number | undefined, rank: number, source: CueSource): n
   return base * SOURCE_WEIGHT[source] / (1 + RANK_FADE * rank);
 }
 
+export const nameKey = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** Normalised names of every place, brand and artist in the ledger's records (tag records list tags, not entities). */
+function entityNameKeys(ledger: Ledger): Set<string> {
+  return new Set(ledger.records.flatMap((r) => (r.entities ?? []).map((e) => nameKey(e.name))).filter((k) => k.length > 0));
+}
+
+/** A possessive proper name ("Buddy's Burger") is a venue's own name, not a taste. */
+const PROPER_POSSESSIVE = /^[A-Z][a-z]+'s\s+[A-Z]/;
+
+/** A tag that only repeats the name of a place or other entity says nothing about taste, so it never drives a colour or caption. */
+export const isNameLike = (tagName: string, entityNames: ReadonlySet<string>): boolean =>
+  entityNames.has(nameKey(tagName)) || PROPER_POSSESSIVE.test(tagName);
+
 const isUsableRecord = (e: Evidence): boolean => (e.tags?.length ?? 0) > 0;
 
 /**
@@ -54,11 +68,12 @@ const isUsableRecord = (e: Evidence): boolean => (e.tags?.length ?? 0) > 0;
  */
 export function extractCues(ledger: Ledger, signalTagIds: readonly string[]): Cue[] {
   const chosen = new Set(signalTagIds);
+  const entityNames = entityNameKeys(ledger);
   const best = new Map<string, Cue>();
   for (const record of ledger.records.filter(isUsableRecord)) {
     (record.tags ?? []).forEach((t, rank) => {
       const source = sourceOf(t.id, chosen);
-      if (!source) return;
+      if (!source || isNameLike(t.name, entityNames)) return;
       const cue: Cue = { name: t.name, source, weight: weightOf(t.score, rank, source), evidence: record.id, tagId: t.id };
       const key = `${source}|${t.name.toLowerCase()}`;
       const prev = best.get(key);

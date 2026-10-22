@@ -8,7 +8,7 @@ Core rule: **the LLM translates, Qloo decides.** The LLM turns text into Qloo qu
 
 ```mermaid
 flowchart TD
-    U[Browser: prompt, mode, optional city] -->|POST /api/brief| R[Route: shared rate limit, byte-limited body,<br/>zod validation, run slot + daily budget]
+    U[Browser: prompt, mode, optional city] -->|POST /api/brief| R[Route: shared rate limit, byte-limited body,<br/>zod validation, run slot]
     R --> S1
 
     subgraph Pipeline [Hybrid pipeline: 3 to 5 LLM calls]
@@ -127,7 +127,7 @@ Values inside the ranges come from `hash01` (FNV-1a) of the sorted Qloo tag ids 
 
 Free LLM tiers meter tokens per minute **per model** (Groq: 8000 for each of gpt-oss-120b, gpt-oss-20b and qwen3.8-27b). Three pieces keep a burst of visitors inside those limits.
 
-**Fewer tokens per brief.** Measured with `npm run prompt:size` (live Qloo, scripted LLM, prompts as Groq receives them, 3.3 characters per token), mean of the Indore, London and New York briefs:
+**Fewer tokens per brief.** Measured with live Qloo and a scripted LLM (prompts as Groq receives them, 3.3 characters per token), mean of the Indore, London and New York briefs:
 
 | Call | Before | After | How |
 |---|---|---|---|
@@ -146,7 +146,7 @@ The synthesis reply is also shorter (no `qlooId` UUIDs, no palette tags or evide
 
 **Showcase.** Six briefs (Indore cafe, London ceramics, New York date-night pop-up, Brooklyn boutique, Chicago record-store bar, Paris pop-up bakery) are generated one at a time with a 4 s gap right after the server boots (production and `QLOO_MODE=live`; `SHOWCASE_WARM_ON_BOOT=0` turns it off), cached in memory and on disk. `npm run warm` polls the deployed `/api/showcase` until all six are ready.
 
-**Load test** (`npm run loadtest -- --url=... --n=3`). Local production build, live Qloo, real LLMs, 3 different briefs started at once (2026-10-21):
+**Load test.** Local production build, live Qloo, real LLMs, 3 different briefs started at once (2026-10-21):
 
 | Brief | Time to brief | Total (with Taste Proof) | Model that wrote it |
 |---|---|---|---|
@@ -165,7 +165,6 @@ Found 2026-10-21 (live Qloo, scripted writer): London ceramics sometimes produce
 - **Repeatability**: temperature 0 for every call, seed plans cached per normalized prompt (`SEED_CACHE=0` turns it off), Qloo results sorted by affinity then id, and the writer told to take ranked entities in order. Measured overlap of picks between two runs: see `docs/BENCHMARK.md`.
 - **Hotspot names** come from Qloo first: the area most of the nearest top places name in their addresses (`pipeline/areaNames.ts`, "Vijay Nagar"), then reverse geocoding, then direction from the city centre.
 - **Neutrals** lean warm or cool with the tags (`colour/undertone.ts`): cosy, wood, folk, spice tags give cream and clay, minimal, industrial, electronic, coastal tags give cool whites and slate.
-- **Forcing the queue** (development): `LLM_FORCE_QUEUE_SECONDS=8` makes every fast model cool for that long before the first short call of each minute, so the "High demand" state can be seen; in production it is ignored unless `LLM_ALLOW_FORCED_QUEUE=1` is set too.
 
 ## SSE event contract
 
@@ -193,7 +192,7 @@ Request bodies:
 - `GET /api/showcase` returns `{ items[] }` with status `queued` | `generating` | `ready` | `failed`; the UI polls until nothing is pending. `?retry=1` clears failure back-off. The service holds six briefs and starts building them, one at a time, when the server boots (see "Load handling"); `npm run warm` waits for all of them.
 - `GET /api/health`: liveness and configuration summary for the container platform. Returns 200 when the environment is valid and 503 when it is misconfigured, so a fresh Render deploy fails its health check until the keys are set.
 
-Errors before streaming starts are JSON: 400 (invalid body, or evidence that fails its signature), 413 (body over the limit, rejected on `Content-Length` before reading and cut off at the limit while streaming), 429 with `Retry-After` (rate limit, shared by brief, refine and compare), 503 (server not configured, or the demo is busy / out of its daily LLM budget; with `Retry-After`).
+Errors before streaming starts are JSON: 400 (invalid body, or evidence that fails its signature), 413 (body over the limit, rejected on `Content-Length` before reading and cut off at the limit while streaming), 429 with `Retry-After` (rate limit, shared by brief, refine and compare), 503 (server not configured, or the demo is busy; with `Retry-After`).
 
 ## Module map
 
@@ -240,7 +239,7 @@ src/
     http/
       streamRoute.ts              shared route scaffolding: rate limit, body, parse, verify, deps, budget, SSE
       request.ts                  client address, byte-limited JSON body
-      guards.ts, budget.ts        shared limiters; concurrency cap and daily LLM budget
+      guards.ts, budget.ts        shared limiters; concurrency cap
       deps.ts                     process-wide LLM and Qloo clients (caches shared across requests)
       verifyRoute.ts, sse.ts      /api/verify handler; stream plumbing
       showcaseService.ts          the showcase service singleton and the boot warm-up
@@ -254,12 +253,8 @@ src/
                                   ItemFeedback, RefineBar, HotspotMap, WalkView, Stages,
                                   ShowcaseGallery, Compose, TasteForgeApp
   ui/                             UI contract types, SSE client, run state, hotspots
-scripts/smoke.mts                 real LLM + mock Qloo end to end
-scripts/prompt-size.mts           tokens per call type with live Qloo and a scripted LLM (npm run prompt:size)
-scripts/loadtest.mts              N concurrent briefs against a running server (npm run loadtest)
 scripts/warm.mts                  waits until the deployed showcase is fully built (npm run warm)
 scripts/benchmark.mts             fabrication benchmark (npm run benchmark), writes docs/BENCHMARK.md
-scripts/llm-bench.mts             replays captured requests against models (npm run bench:llm)
 e2e/                              Playwright flows: brief, refine, share, compare
 ```
 
@@ -271,7 +266,7 @@ e2e/                              Playwright flows: brief, refine, share, compar
 | Evidence ledger plus validator | "Grounded" has to be checkable. Citations are ids that either exist in the ledger or do not, so the score is computed by code, not claimed by the model. |
 | Dropped items lower the score | Hiding failures would make the score meaningless. |
 | Critic limited to a fixed menu of strategies | The model can improve thin coverage but cannot invent queries; off-menu or repeated follow-ups are discarded. Capped at 2 rounds. |
-| Ask when a name is ambiguous | A wrong guess at the seed poisons every downstream call. A one-click question is cheaper. Showcases and smoke runs auto-pick instead. |
+| Ask when a name is ambiguous | A wrong guess at the seed poisons every downstream call. A one-click question is cheaper. Showcases auto-pick instead. |
 | Taste Proof verifies, then scores | A name is searched across all entity types (a venue may be a brand, an author a person), compared after removing accents, "The", punctuation and descriptors like "Cafe", and judged against the city for places. The result is one of verified, wrong type, other city or not in Qloo's data; none of them says "invented", because Qloo's catalogue is not the world. Only verified picks are scored with `filter.results.entities`, and the averages are a sanity check, not a claim: Qloo normalizes affinity within each query. |
 | A missing proof says why | The proof stage reports its reason (no baseline answer, scoring too slow, an error) and the page shows it. Showcases try the proof a second time before they are served without one. |
 | Fast and main LLM chains, spread over the Groq models | Each call type has its own ordered chain: `LLM_CHAIN_FAST` for the short calls (seeds, critic, Taste Proof baseline), `LLM_CHAIN_MAIN` for the brief synthesis. Groq answers the short calls in 0.4 to 1 s and the synthesis in 5 to 6 s, where Gemini's free tier needs 9 to 21 s and 13 to 16 s, so Groq leads both chains and Gemini is the deeper fallback. Because every Groq model has its own minute budget, the short calls start on the small models (gpt-oss-20b, qwen3.8-27b) and gpt-oss-120b is kept for the synthesis, with a token budget steering around a model that is nearly spent (see "Load handling"). The baseline is a plain LLM either way: speed does not change its role as the opponent, but a smaller model writes it. |
@@ -280,7 +275,7 @@ e2e/                              Playwright flows: brief, refine, share, compar
 | Model cascades (`LLM_CHAIN_FAST` / `LLM_CHAIN_MAIN`), JSON response cache | Keeps the demo alive on free tiers. Models are tried in order and the two chains share their cooldowns; one that returns 429, quota exhausted or 503 cools down (until 00:00 UTC for daily quotas, else the retry-after) and is skipped, so a failed request is not paid per brief. The answering model is recorded in `brief.model`. The LLM and Qloo clients (and their caches) are created once per process, so repeat requests actually hit the caches. The Qloo client keeps at most 4 requests in flight with a 250 ms gap between starts (the hackathon key answers 429 for bursts), and retries with jitter on 429 (twice), 5xx and timeouts (once). |
 | Stateless server; client echoes brief, evidence and signals on refine | No database, nothing to leak, nothing to clean up. Bodies are schema-validated and size-capped. |
 | HMAC-signed evidence ledger (`LEDGER_SECRET`) | The browser holds the evidence between calls, so without a signature it could forge "Qloo data" for refine, compare or a shared link. Each record and the signal set are signed per record; a second signature covers the slimmed form share links carry. Shared pages verify through `/api/verify` and say so. The signature covers the evidence, not the prose of the brief. |
-| One shared limiter, run cap and daily LLM budget | Separate per-route limiters tripled a visitor's allowance. One allowance, a cap on concurrent runs and a daily call budget keep a public demo inside free-tier quotas, and the failure is a friendly, retryable "busy" message. |
+| One shared limiter and a run cap | Separate per-route limiters tripled a visitor's allowance. One allowance and a cap on concurrent runs keep a public demo responsive, and the failure is a friendly, retryable "busy" message. There is deliberately no spending cap: the LLM cascade cooldowns and Qloo per-second pacing prevent errors, and nothing stops a judge from running briefs. |
 | User text fenced in prompts, Qloo ids validated | Prompt-injection hygiene: fenced fields plus an instruction to treat them as data; ids from the browser must match Qloo's id formats before they reach a query string. |
 | Refine re-walks only touched sections | Faster and keeps liked and locked items verbatim. Dislikes become `filter.exclude.*`; likes are added as signals. The heatmap has no exclude parameter, so disliked cells are filtered after the call. |
 | Showcase briefs pre-generated at boot, one at a time with spacing | Judges get an instant first result even when the LLM tier is throttled. Six briefs in six cities are built right after a production boot on live data, cached in memory and in a git-ignored directory only (a Render free instance loses its disk when it sleeps, so `npm run warm` before judging). |

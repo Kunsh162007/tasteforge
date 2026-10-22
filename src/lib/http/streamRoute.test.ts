@@ -13,7 +13,7 @@ import { createRateLimiter } from "@/lib/rateLimit";
 import { createLedgerSigner } from "@/lib/security/ledgerSig";
 import { slimEvidence } from "@/lib/share/codec";
 
-const ENV_KEYS = ["LLM_PROVIDER", "QLOO_MODE", "LEDGER_SECRET", "MAX_CONCURRENT_BRIEFS", "DAILY_LLM_BUDGET"] as const;
+const ENV_KEYS = ["LLM_PROVIDER", "QLOO_MODE", "LEDGER_SECRET", "MAX_CONCURRENT_BRIEFS"] as const;
 let saved: Record<string, string | undefined>;
 
 beforeEach(() => {
@@ -22,7 +22,6 @@ beforeEach(() => {
   process.env.QLOO_MODE = "mock";
   process.env.LEDGER_SECRET = "test-ledger-secret-0123456789";
   delete process.env.MAX_CONCURRENT_BRIEFS;
-  delete process.env.DAILY_LLM_BUDGET;
   resetSingletons();
 });
 
@@ -124,7 +123,7 @@ describe("dependencies and capacity", () => {
   });
 
   it("answers a friendly retryable 503 when too many runs are active, and frees the slot afterwards", async () => {
-    const budget = createBudget({ maxConcurrent: 1, dailyCalls: 100 });
+    const budget = createBudget({ maxConcurrent: 1 });
     let release: () => void = () => undefined;
     const held = new Promise<boolean>((resolve) => (release = () => resolve(true)));
     const first = await handleStreamRoute(post("/x", "{}"), { ...spec, run: () => held }, env({ budget }));
@@ -139,14 +138,6 @@ describe("dependencies and capacity", () => {
     expect((await handleStreamRoute(post("/x", "{}"), spec, env({ budget }))).status).toBe(200);
   });
 
-  it("refuses new runs once the daily LLM budget is spent", async () => {
-    const budget = createBudget({ maxConcurrent: 4, dailyCalls: 1 });
-    budget.recordCall();
-    const res = await handleStreamRoute(post("/x", "{}"), spec, env({ budget }));
-    expect(res.status).toBe(503);
-    expect(((await res.json()) as { error: string }).error).toMatch(/tomorrow/i);
-  });
-
   it("builds the LLM and Qloo clients once per process", () => {
     const a = getRouteDeps();
     const b = getRouteDeps();
@@ -155,7 +146,7 @@ describe("dependencies and capacity", () => {
   });
 
   it("releases the slot even when the run throws", async () => {
-    const budget = createBudget({ maxConcurrent: 1, dailyCalls: 100 });
+    const budget = createBudget({ maxConcurrent: 1 });
     const res = await handleStreamRoute(post("/x", "{}"), { ...spec, run: async () => { throw new Error("boom"); } }, env({ budget }));
     const out = await frames(res);
     expect(out.map((f) => f.event)).toEqual(["error", "done"]);

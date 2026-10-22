@@ -1,7 +1,7 @@
 import type { AgentEvent, Brief, BriefMode, BriefSignals, Evidence } from "@/lib/agent";
 
 /**
- * UI view of the backend contract (docs/IMPLEMENTATION_PLAN.md sections 3 and 8.4).
+ * UI view of the backend contract.
  * Everything is re-exported from @/lib/agent so the two sides cannot drift. Type-only: nothing
  * from the server bundle reaches the browser.
  */
@@ -37,7 +37,7 @@ export type BriefRequestBody = {
   selections?: { label: string; qlooId: string; kind: string }[];
 };
 
-/** POST /api/brief/refine body (see docs/IMPLEMENTATION_PLAN.md section 8.5). */
+/** POST /api/brief/refine body. */
 export type RefineRequestBody = {
   prompt: string;
   mode: BriefMode;

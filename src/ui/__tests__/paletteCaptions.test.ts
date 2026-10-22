@@ -15,6 +15,23 @@ const evidence = {
   ]),
 };
 
+describe("swatchCaptions tag-only", () => {
+  it("captions only with tags, never a place name or a venue's possessive name", () => {
+    const ev = {
+      ev_1: {
+        ...record("ev_1", [
+          ["urn:tag:decor:industrial", "Industrial"],
+          ["urn:tag:cuisine:steak", "Steak"],
+          ["urn:tag:specialty_dish:place:buddy_s_burger", "Buddy's Burger"],
+        ]),
+        entities: [{ id: "p1", name: "Smoke House" }],
+      },
+    } as Record<string, Evidence>;
+    const [caption] = swatchCaptions([{ tags: ["Buddy's Burger", "Smoke House", "Steak", "Industrial"], evidence: ["ev_1"] }], ev);
+    expect(caption).toEqual(["Industrial", "Steak"]);
+  });
+});
+
 describe("swatchCaptions", () => {
   it("prefers decor and ambience tags, at most two, over genre and cuisine", () => {
     const [caption] = swatchCaptions([{ tags: ["Jazz", "Soul Food", "Historic", "Classic"], evidence: ["ev_1"] }], evidence);

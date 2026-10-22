@@ -1,7 +1,7 @@
 import type { Brief, DroppedItem } from "./brief";
 import type { Evidence } from "./ledger";
 
-/** Event contract shared with the UI (docs/IMPLEMENTATION_PLAN.md section 8.4). */
+/** Event contract shared with the UI. */
 
 export type StageName = "seeds" | "resolve" | "walk" | "critic" | "synthesis" | "proof";
 

@@ -5,7 +5,7 @@ import type { Evidence, Ledger } from "./ledger";
 /**
  * Menu and merch ideas in the pairings are the writer's own words, which is where "Post-Punk Pepperoni Pizza" came from: a
  * dish nobody's data mentions, dressed in the audience's music. A menu idea is kept only when every word in it comes from
- * the Qloo tags (cuisines, dishes, genres) or entities in the evidence. The writer may name and combine; it may not add.
+ * the Qloo food tags (cuisines, dishes, drinks) in the evidence; music, audience and lifestyle tags never count. The writer may name and combine; it may not add.
  */
 
 /** Words that build a menu line without naming food: they carry no claim about the audience. */
@@ -27,15 +27,29 @@ const words = (text: string): string[] =>
 /** Crude singular, so "Dumplings" in a tag covers "dumpling" in a menu line. */
 const stem = (w: string): string => (w.length > 3 && w.endsWith("s") && !w.endsWith("ss") ? w.slice(0, -1) : w);
 
-const isTagRecord = (r: Evidence): boolean => r.endpoint.includes("urn:tag") || (r.tags?.length ?? 0) > 0;
+/** Tag type families that name something you can serve: cuisines, dishes, drinks, food and restaurant-type genres. */
+const FOOD_TAG = /^urn:tag:(?:cuisine|specialty_dish|offerings?|dish(?:es)?|drinks?|beverages?|food|menu)(?::|$)|^urn:tag:genre:place:(?:restaurant|bar|cafe|bakery|brewery|coffee)/;
+const FOOD_TAG_TYPE = /(?:cuisine|specialty_dish|offerings?|dish|drink|beverage|food|menu|genre:place:(?:restaurant|bar|cafe|bakery|brewery|coffee))/;
 
-/** Every word the evidence uses for food, drink and genre: tag names, plus entity names (a brand can be on the menu). */
+/**
+ * Whether a tag may inspire a menu idea. A full tag URN decides on its own type (music, audience and lifestyle tags never
+ * do); a bare id falls back to the tag types the record was fetched with, which must all be food types.
+ */
+export function isFoodTag(tagId: string, record: Pick<Evidence, "params">): boolean {
+  if (tagId.startsWith("urn:tag:")) return FOOD_TAG.test(tagId);
+  const types = (record.params.tag_types ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+  return types.length > 0 && types.every((t) => FOOD_TAG_TYPE.test(t));
+}
+
+/** The food, drink and cuisine tags in the evidence: the only source of menu ideas. */
+export function foodTags(ledger: Ledger): { readonly name: string }[] {
+  return ledger.records.flatMap((r) => (r.tags ?? []).filter((t) => isFoodTag(t.id, r)));
+}
+
+/** Every word the evidence uses for food and drink: the names of its cuisine, dish and drink tags only. */
 export function evidenceVocabulary(ledger: Ledger): Set<string> {
   const vocab = new Set<string>();
-  for (const r of ledger.records) {
-    for (const t of r.tags ?? []) for (const w of words(t.name)) vocab.add(stem(w));
-    if (!isTagRecord(r)) for (const e of r.entities ?? []) for (const w of words(e.name)) vocab.add(stem(w));
-  }
+  for (const t of foodTags(ledger)) for (const w of words(t.name)) vocab.add(stem(w));
   return vocab;
 }
 
@@ -43,9 +57,7 @@ export function evidenceVocabulary(ledger: Ledger): Set<string> {
 export function sourceTags(label: string, ledger: Ledger): string[] {
   const mine = new Set(words(label).map(stem));
   const found = new Set<string>();
-  for (const r of ledger.records) {
-    for (const t of r.tags ?? []) if (words(t.name).some((w) => mine.has(stem(w)))) found.add(t.name);
-  }
+  for (const t of foodTags(ledger)) if (words(t.name).some((w) => mine.has(stem(w)))) found.add(t.name);
   return [...found].slice(0, 3);
 }
 

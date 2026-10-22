@@ -3,7 +3,7 @@ import { singleton } from "@/lib/singleton";
 /**
  * Latest Qloo rate-limit headers, kept per server process. verified live 2026-10-21: every response carries
  * X-Second-RateLimit-{Limit,Remaining,Reset} (10 a second, reset in seconds) and X-Month-RateLimit-{Limit,Remaining,Reset}
- * (50,000 a month, reset in seconds). The key is shared with the judges, so live runs pause before the month runs dry.
+ * (50,000 a month, reset in seconds).
  */
 
 export type RateWindow = {
@@ -17,17 +17,10 @@ export type RateWindow = {
 
 export type QuotaState = { readonly month?: RateWindow; readonly second?: RateWindow };
 
-type Env = Readonly<Record<string, string | undefined>>;
-
-export const DEFAULT_MONTH_RESERVE = 2000;
-export const DEFAULT_SHOWCASE_RESERVE = 1000;
 /** Below this many requests left in the current second, a hedged duplicate is not worth the burst. */
 export const HEDGE_MIN_SECOND_REMAINING = 3;
 /** A reset header larger than this is not a per-second window; do not stall for it. */
 const MAX_SECOND_WAIT_MS = 5_000;
-
-export const QUOTA_PAUSED_MESSAGE =
-  "Live briefs are paused to protect the shared data quota. The finished briefs on the home page still work.";
 
 const store = (): { state: QuotaState } => singleton("qlooQuota", () => ({ state: {} as QuotaState }));
 
@@ -67,23 +60,6 @@ export function recordRateLimitHeaders(headers: Headers, now: number = Date.now(
   s.state = { ...s.state, ...(month ? { month } : {}), ...(second ? { second } : {}) };
 }
 
-function reserveFrom(raw: string | undefined, fallback: number): number {
-  const n = raw === undefined || raw.trim() === "" ? Number.NaN : Number(raw);
-  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : fallback;
-}
-
-/** Month-remaining under which new live runs are refused (env QLOO_MONTH_RESERVE, default 2000). */
-export const monthReserve = (env: Env = process.env): number => reserveFrom(env.QLOO_MONTH_RESERVE, DEFAULT_MONTH_RESERVE);
-
-/** Showcase generation may dig deeper into the quota, but never above the main reserve. */
-export const showcaseReserve = (env: Env = process.env): number => Math.min(DEFAULT_SHOWCASE_RESERVE, monthReserve(env));
-
-/** The friendly refusal when month-remaining is known and below `reserve`; undefined when runs may go ahead. */
-export function quotaPauseMessage(reserve: number): string | undefined {
-  const month = getQuota().month;
-  return month && month.remaining < reserve ? QUOTA_PAUSED_MESSAGE : undefined;
-}
-
 /** How long to wait before the next request when this second's allowance is spent (0 when free to go). */
 export function secondWaitMs(now: number = Date.now()): number {
   const second = getQuota().second;
@@ -103,21 +79,19 @@ export type QuotaSummary = {
   readonly monthRemaining: number | null;
   readonly monthLimit: number | null;
   readonly monthResetsAt: string | null;
-  readonly paused: boolean;
 };
 
-export function quotaSummary(env: Env = process.env): QuotaSummary {
+export function quotaSummary(): QuotaSummary {
   const month = getQuota().month;
   return {
     monthRemaining: month?.remaining ?? null,
     monthLimit: month?.limit ?? null,
     monthResetsAt: month?.resetsAt !== undefined ? new Date(month.resetsAt).toISOString() : null,
-    paused: quotaPauseMessage(monthReserve(env)) !== undefined,
   };
 }
 
 /** One printable line for `npm run qloo:check`; numbers only. */
-export function formatQuotaLine(env: Env = process.env, now: number = Date.now()): string {
+export function formatQuotaLine(now: number = Date.now()): string {
   const { month, second } = getQuota();
   if (!month && !second) return "QUOTA: no rate-limit headers seen (mock mode or no response).";
   const parts: string[] = [];
@@ -126,6 +100,5 @@ export function formatQuotaLine(env: Env = process.env, now: number = Date.now()
     parts.push(`month ${month.remaining}/${month.limit ?? "?"} left${days}`);
   }
   if (second) parts.push(`second ${second.remaining}/${second.limit ?? "?"} left`);
-  const paused = quotaPauseMessage(monthReserve(env)) !== undefined;
-  return `QUOTA: ${parts.join("; ")}; live briefs ${paused ? "PAUSED (below QLOO_MONTH_RESERVE)" : "allowed"}.`;
+  return `QUOTA: ${parts.join("; ")}.`;
 }

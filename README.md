@@ -162,8 +162,6 @@ Details, the event contract and the module map are in [docs/ARCHITECTURE.md](doc
 | `LEDGER_SECRET` | random per process | Key for the HMAC that signs the evidence handed to the browser (refine, compare, shared links). Use a long random value (16+ characters, e.g. `openssl rand -base64 32`). Without it a random secret is generated at startup and a warning is logged; shared links then stop verifying after each restart. `render.yaml` generates one for you. |
 | `MAX_CONCURRENT_BRIEFS` | `4` | Briefs, refinements and comparisons that may run at once, server-wide. Beyond it visitors get a friendly, retryable "demo is busy" message. |
 | `SHOWCASE_WARM_ON_BOOT` | `1` | In production on live data, build the six showcase briefs right after boot. `0` turns it off. |
-| `DAILY_LLM_BUDGET` | `600` | LLM calls per UTC day, server-wide. Once spent, new runs get a "try again tomorrow" message instead of hammering the free tier. |
-| `QLOO_MONTH_RESERVE` | `2000` | Qloo monthly-quota guard. When Qloo reports fewer monthly requests left than this, live briefs, refine and compare are paused with a friendly message; showcase generation uses its own lower reserve of 1000. `GET /api/health` shows the current figures under `qloo.quota`. |
 
 Keys are read from the environment only. `.env*` is git-ignored except `.env.example`.
 
@@ -176,12 +174,8 @@ Keys are read from the environment only. `.env*` is git-ignored except `.env.exa
 | `npm run test:coverage` | Same, with V8 coverage |
 | `npm run lint` | ESLint |
 | `npm run test:e2e` | Playwright end-to-end flow (submit, brief, evidence drawer, Taste Proof, map, refine) |
-| `npm run smoke` | Real LLM from your env plus mock Qloo; prints stages, LLM call count, duration, citation coverage and proof averages |
 | `npm run benchmark` | Verification benchmark: 20 prompts across 5 cities, plain LLM against TasteForge, checked against live Qloo; writes `docs/BENCHMARK.md`. Needs `QLOO_MODE=live` and an LLM key. |
 | `npm run warm` | Waits until the deployed showcase (default https://tasteforge-fa98.onrender.com, or `-- --url=...`) has all six briefs ready; also wakes a sleeping Render instance. See the judging-day checklist. |
-| `npm run loadtest -- --url=http://localhost:3000 --n=4` | Fires N concurrent briefs at a running server and prints time to brief, total time, the model that wrote each brief, "high demand" waits and errors. Uses real LLM and Qloo calls on the server. |
-| `npm run prompt:size` | Tokens each LLM call type would send (live Qloo, scripted LLM, no LLM quota). |
-| `npm run bench:llm` | Replays captured LLM requests against chosen models (latency, JSON validity, citation coverage); see `docs/ARCHITECTURE.md`, "Speed pass". |
 | `npm run qloo:check -- --live` | Probes each Qloo endpoint and parameter and prints PASS/WARN/FAIL plus the remaining Qloo quota. Needs `-- --live` and `QLOO_API_KEY` to test real data (about 21 live Qloo calls, which count against the monthly quota); without `--live` it runs against the mock fixtures and proves nothing about the live API. |
 
 ## Judging-day checklist
@@ -190,7 +184,7 @@ Keys are read from the environment only. `.env*` is git-ignored except `.env.exa
 2. About 20 minutes before judging run `npm run warm`. It wakes the free instance (about 30 s) and waits until all six showcase briefs are ready (about 5 minutes on live data). It exits 0 when they are; run it again if it times out, the server keeps building.
 3. Open the site once and open two or three showcase briefs: each should show its own palette, its Why chips and a Taste Proof.
 4. Build one live brief of your own to check the whole path, then leave the instance alone: a Render free instance sleeps after 15 minutes without traffic and forgets its showcase cache when it does. Run `npm run warm` again if it slept.
-5. Check `GET /api/health` returns 200 with `"problems":[]`, and that `qloo.quota` shows monthly requests left above `QLOO_MONTH_RESERVE` (default 2000). Below it, live briefs pause and only showcases open.
+5. Check `GET /api/health` returns 200 with `"problems":[]`, and that `qloo.quota` shows the monthly requests left (information only; nothing pauses on it).
 6. If the LLM free tiers are spent (`/api/health` stays ok but briefs say "busy"), the showcase briefs still open instantly. The Render log shows every model switch (`llm groq:... -> gemini:...: rate_limit HTTP 429`).
 
 ## Deploy
@@ -207,7 +201,7 @@ The showcase cache and rate limiter are per server instance (in memory, with a g
 - A brief sent to your browser contains the evidence records it cites (needed for the Why drawer); that is the only Qloo-derived data that leaves the server.
 - No accounts, no database, no analytics.
 - In live mode, neighbourhood names for coordinate-only hotspots come from OpenStreetMap Nominatim reverse geocoding (rate-limited, cached). Mock mode makes no such calls.
-- Abuse limits: brief, refine and compare share one allowance of 12 requests per 10 minutes per visitor. The visitor is identified by the platform header (`true-client-ip` on Render, `x-real-ip` on Vercel) or the last `X-Forwarded-For` hop, never the client-controlled first entry. On top of that sit a server-wide cap on concurrent runs, a daily LLM-call budget (`MAX_CONCURRENT_BRIEFS`, `DAILY_LLM_BUDGET`), a limit on manual showcase retries (one per minute for the whole server) and size limits that are enforced on the bytes read, not just the `Content-Length` header.
+- Abuse limits: brief, refine and compare share one allowance of 12 requests per 10 minutes per visitor. The visitor is identified by the platform header (`true-client-ip` on Render, `x-real-ip` on Vercel) or the last `X-Forwarded-For` hop, never the client-controlled first entry. On top of that sit a server-wide cap on concurrent runs (`MAX_CONCURRENT_BRIEFS`), a limit on manual showcase retries (one per minute for the whole server) and size limits that are enforced on the bytes read, not just the `Content-Length` header.
 - Request bodies are schema-validated, Qloo ids from the browser must look like Qloo ids, and user-provided text is fenced (`<<< >>>`) in every LLM prompt with an instruction to treat it as data.
 - Evidence and taste signals that come back from the browser (refine, compare, shared links) must carry the server's HMAC signature (`LEDGER_SECRET`); edited or invented evidence is rejected.
 
@@ -218,7 +212,7 @@ The showcase cache and rate limiter are per server instance (in memory, with a g
 - **Result hygiene.** In code, before the writer sees Qloo results: the user's own seeds are removed (by id and normalized name), places more than 50 km from the city's result cluster are dropped (with a same-city widening query if that leaves too few), film and TV picks below the batch median affinity are omitted, and style tags are ranked by how specific they are to the top places versus the city's ordinary places.
 - **Coverage varies by city.** Places, decor/ambience tags and heatmaps depend on Qloo's coverage. Thin sections get a lower confidence label and the critic tries fallbacks (drop the city, tags only).
 - **Free-tier LLM limits.** Gemini and Groq free tiers are rate-limited (Groq: 8000 tokens a minute per model; one brief uses about 4,300 input tokens plus replies, so about 1.5 briefs a minute fit on gpt-oss-120b). The app counts each model's tokens per minute, passes over a model that is nearly spent, cools down any model that hits its quota or an outage, and paces showcase generation. When nothing has room it queues the brief for up to 25 s and shows "High demand: your brief is next, about N seconds". Local load test, 3 briefs at once: all answered in 28 to 41 s, written by gpt-oss-120b, qwen3.8-27b and Gemini 2.5 Flash with no failed attempts.
-- **Demo capacity.** A server-wide cap on concurrent runs and a daily LLM budget protect the free tiers; when either is hit the app says it is busy and to retry. Limits and caches are per server instance.
+- **Demo capacity.** A server-wide cap on concurrent runs keeps the demo responsive; when it is hit the app says it is busy and to retry. Limits and caches are per server instance.
 - **Pipeline deadline.** A brief has a 90 second budget, and the Qloo walk stops waiting after 28 s: calls still running are shown as skipped ("Left out") and the brief is written from what arrived, with lower section confidence (live Qloo calls take 1 to 10 s each with a long tail). Only a wholly unusable run ends in a friendly retryable error.
 - Parameter spellings that could not be confirmed offline are marked `VERIFY with live key` in `src/lib/qloo/` and are checked by `qloo:check`.
 

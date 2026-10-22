@@ -1,4 +1,5 @@
 import { entityImage, entityNote } from "./describe";
+import { displayName } from "./displayName";
 import type {
   Demographics,
   HeatmapCell,
@@ -55,7 +56,7 @@ export function normalizeTag(raw: unknown): QlooTag | undefined {
   if (!id) return undefined;
   return compact({
     id,
-    name: str(t.name) ?? id,
+    name: displayName(str(t.name), id),
     type: str(t.type) ?? str(t.subtype),
     score: num(obj(t.query).affinity) ?? num(t.score),
     entityTypes: tagEntityTypes(t.parents),
@@ -86,7 +87,7 @@ export function normalizeEntity(raw: unknown): QlooEntity | undefined {
     .filter((k): k is string => k !== undefined);
   return compact({
     id,
-    name: str(e.name) ?? id,
+    name: displayName(str(e.name), id),
     type,
     kinds: kinds.length > 0 ? kinds : undefined,
     note: entityNote(type, props),

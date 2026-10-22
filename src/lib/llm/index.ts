@@ -4,7 +4,6 @@ import { loadLlmConfig, type ChainEntry, type LlmConfig } from "./config";
 import { createGeminiProvider } from "./gemini";
 import { createGroqProvider } from "./groq";
 import type { Observation } from "./tokenBudget";
-import { createForcedQueueGate, forcedQueueSeconds, withSimulatedQueue } from "./forceQueue";
 import { routeOf } from "./route";
 import { createScriptedLlm } from "./scripted";
 import { createTokenBudget, type TokenBudget } from "./tokenBudget";
@@ -26,14 +25,12 @@ export type CreateLlmOptions = {
   readonly fetchImpl?: typeof fetch;
   /** Pass false to disable the in-memory JSON response cache. */
   readonly cache?: boolean;
-  /** Called once per upstream request actually sent (cache hits excluded): feeds the daily budget. */
+  /** Called once per upstream request actually sent (cache hits excluded). */
   readonly onCall?: () => void;
   readonly now?: () => number;
   /** Per-model token budget; by default one is built from the config (Groq models are tracked, Gemini is not). */
   readonly budget?: TokenBudget;
   readonly sleep?: (ms: number) => Promise<void>;
-  /** Development switch (see forceQueue.ts): every fast model cools for this many seconds before the first short call. Default: LLM_FORCE_QUEUE_SECONDS. */
-  readonly forceQueueSeconds?: number;
 };
 
 function entryFor(e: ChainEntry, config: LlmConfig, o: CreateLlmOptions, budget: TokenBudget): CascadeEntry {
@@ -59,8 +56,7 @@ export { routeOf };
  * model that last answered a main (synthesis) call.
  */
 export function createLlm(config: LlmConfig = loadLlmConfig(), o: CreateLlmOptions = {}): LlmProvider {
-  const forced = "forceQueueSeconds" in o ? o.forceQueueSeconds : forcedQueueSeconds();
-  if (config.provider === "mock") return forced ? withSimulatedQueue(createScriptedLlm(), forced, { sleep: o.sleep, now: o.now }) : createScriptedLlm();
+  if (config.provider === "mock") return createScriptedLlm();
   const cooldowns = new Map<string, number>();
   const budget = o.budget ?? budgetFor(config, o.now);
   const build = (chain: readonly ChainEntry[]): LlmProvider =>
@@ -77,21 +73,11 @@ export function createLlm(config: LlmConfig = loadLlmConfig(), o: CreateLlmOptio
     );
   const main = build(config.chain);
   const fast = build(config.fastChain);
-  const forceDue = createForcedQueueGate(o.now);
-  /** Every fast model cools down for the forced time: the next short call queues exactly as it does when real quotas run out. */
-  const coolFastModels = (): void => {
-    if (!forced || !forceDue()) return;
-    const until = (o.now ?? Date.now)() + forced * 1000;
-    for (const e of config.fastChain) cooldowns.set(`${e.provider}:${e.model}`, until);
-  };
   const routed: LlmProvider = {
     get name() {
       return main.name;
     },
-    chatJson: (req) => {
-      if (routeOf(req) === "fast") coolFastModels();
-      return (routeOf(req) === "fast" ? fast : main).chatJson(req);
-    },
+    chatJson: (req) => (routeOf(req) === "fast" ? fast : main).chatJson(req),
   };
   return o.cache === false ? routed : withJsonCache(routed);
 }

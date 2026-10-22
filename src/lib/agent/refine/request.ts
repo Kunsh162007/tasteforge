@@ -4,7 +4,7 @@ import { BriefDraftSchema } from "../brief";
 import type { BriefSignals } from "../events";
 import type { Evidence } from "../ledger";
 
-/** POST /api/brief/refine body (docs/IMPLEMENTATION_PLAN.md section 8.5). */
+/** POST /api/brief/refine body. */
 
 export const MAX_REFINE_BODY_CHARS = 200_000;
 const MAX_REF_CHARS = 160;

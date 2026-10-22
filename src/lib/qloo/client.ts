@@ -80,7 +80,7 @@ export type QlooClient = {
 
 /**
  * verified live 2026-10-20: broad insights queries (films, London places) regularly take 5 to 10 s and sometimes 25 to 40 s.
- * Measured again 2026-10-20 (profile:live): the same New York place query answered in 3.5 s, 12 s and not at all in 30 s,
+ * Measured again 2026-10-20: the same New York place query answered in 3.5 s, 12 s and not at all in 30 s,
  * so a short timeout plus one hedged duplicate beats one long wait.
  */
 const DEFAULT_TIMEOUT_MS = 15_000;

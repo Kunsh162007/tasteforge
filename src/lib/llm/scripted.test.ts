@@ -24,6 +24,15 @@ describe("LLM_PROVIDER=mock", () => {
     expect(result.brief?.groundingScore).toBe(1);
     expect(result.brief?.sound.artists.length).toBeGreaterThan(0);
     expect(result.brief?.aesthetic.palette.length).toBeGreaterThan(0);
+    // Messaging: structure only (the scripted fixture stands in for the model).
+    const phrases = result.brief?.messaging.phrases ?? [];
+    expect(phrases).toHaveLength(3);
+    for (const line of phrases) {
+      const count = line.trim().split(/\s+/).length;
+      expect(count).toBeGreaterThanOrEqual(4);
+      expect(count).toBeLessThanOrEqual(10);
+    }
+    expect(result.brief?.messaging.evidence.length).toBeGreaterThan(0);
     // Indian-city baseline: some names Qloo knows (with lower scores), some it cannot find.
     expect(result.proof?.baselineNotFound).toBeGreaterThan(0);
     expect(result.proof?.baselineNotFound).toBeLessThan(result.proof?.baseline.length ?? 0);

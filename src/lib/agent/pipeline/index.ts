@@ -63,7 +63,7 @@ export type PipelineOptions = {
   readonly onResolved?: () => void;
   /** Called once the core graph walk has finished or given up (always, even when the run fails): Qloo is then free for side work. */
   readonly onWalked?: (ledger?: Ledger) => void;
-  /** false: ambiguous names are resolved to the top match instead of asking (showcases, smoke). */
+  /** false: ambiguous names are resolved to the top match instead of asking (showcases). */
   readonly allowNeedsInput?: boolean;
 };
 
@@ -73,7 +73,7 @@ export type RunResult = {
   readonly dropped: readonly DroppedItem[];
   readonly ledger: Ledger;
   readonly error?: string;
-  /** Key-free diagnostic for server logs / smoke tests, e.g. "groq rate_limit HTTP 429". */
+  /** Key-free diagnostic for server logs, e.g. "groq rate_limit HTTP 429". */
   readonly cause?: string;
 };
 

@@ -2,7 +2,7 @@ import { z } from "zod";
 import type { SectionConfidence } from "./events";
 
 /**
- * Output contract (docs/IMPLEMENTATION_PLAN.md section 3). `BriefDraftSchema` is what the model
+ * Output contract. `BriefDraftSchema` is what the model
  * submits; `groundingScore` and `mode` are added server-side after validation.
  */
 

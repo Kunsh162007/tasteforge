@@ -215,7 +215,7 @@ function chosenEntities(chosen: readonly string[], found: readonly { id: string;
 /**
  * Stage 2: resolve seeds to entity ids and concepts to tag ids, all in parallel.
  * `chosen` holds Qloo ids the user picked after a needs_input round; `autoPick` takes the top match
- * instead of reporting ambiguity (showcases and smoke runs).
+ * instead of reporting ambiguity (showcases).
  */
 export async function resolveSeeds(
   ctx: PipelineCtx,

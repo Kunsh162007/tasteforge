@@ -116,7 +116,7 @@ function brief(prompt: string): unknown {
     ...(heat && cityName ? { whereTheyAre: { city: cityName, hotspots: hotspotItems(heat, cityName) } } : {}),
     messaging: {
       tone: "Quiet confidence, specific and warm; never loud.",
-      phrases: ["Take the long way round", "Made slowly, shared gladly", "Stay a while"],
+      phrases: ["Slow records, low lamps, long evenings", "Dream pop drifting through a dim room", "Made slowly, shared gladly, never rushed"],
       evidence: all.slice(0, 3),
     },
   };

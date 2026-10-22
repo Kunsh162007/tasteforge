@@ -1,7 +1,7 @@
 import { itemKey, itemRef, itemsAt, parseItemKey, SLOTS, type SlotPath } from "@/lib/agent/briefItems";
 import type { Brief, Evidence } from "./contract";
 
-/** Per-item review marks for the refine loop (docs/IMPLEMENTATION_PLAN.md section 8.5). Pure and immutable. */
+/** Per-item review marks for the refine loop. Pure and immutable. */
 
 export type Mark = "liked" | "disliked";
 
