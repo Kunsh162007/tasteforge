@@ -24,7 +24,47 @@ Every line carries a receipt: a "why" button that opens the exact Qloo question 
 
 There are two modes. **I know my audience** works when you can describe your crowd ("young professionals who like indie folk and slow living"). **Find my audience** works when you can only describe what you make ("earthy, Japanese-inspired ceramics"), and the agent works out whose taste fits it.
 
-## A walkthrough: a record-store bar in Chicago
+## How we built it
+
+TasteForge is a Next.js and TypeScript app. The agent's work streams to the browser over Server-Sent Events. The pipeline is a hybrid: code runs the predictable steps, and the model is used only where judgement is needed.
+
+1. **Seeds:** a fast LLM call pulls out the names, phrases and city from your description.
+2. **Resolve:** Qloo search and tag lookups run in parallel, and the agent asks when a name is ambiguous.
+3. **Graph walk:** parallel Qloo queries for each section of the brief, all recorded in an **evidence ledger**.
+4. **Critic:** checks coverage per section and may request follow-up queries from a fixed menu, such as widening the search or switching to tag signals.
+5. **Synthesis:** writes the brief in JSON mode, from ledger evidence only.
+6. **Validator:** plain code that removes any item without a valid citation and computes citation coverage.
+7. **Taste Proof:** scores the plain AI's answer and TasteForge's with Qloo.
+
+That's 3 to 5 LLM calls per brief, down from 10 to 15 when the model chose every step. The palette is computed in code from the brief's own tags, so different audiences get visibly different looks. Model calls go through a cascade of fast models with automatic fallback. Shared links are signed with HMAC. The test suite (over 700 unit tests plus browser end-to-end tests) asserts the exact Qloo parameter strings, because Qloo silently ignores parameters it doesn't recognise.
+
+## Challenges we ran into
+
+- **Being fair to the chatbot.** Our first matcher marked real venues like The Green Mill and Café de Flore as "not found". It now searches every entity type, tolerates accents, articles and suffixes, checks the city, and labels results as "couldn't verify" rather than "invented".
+- **Local taste.** An indie café crowd in Indore first got American rock radio. Adding Qloo's location signal to audience queries brought in local acts.
+- **Keeping the model honest.** Telling a model not to make things up isn't enough. Grounding works as a data structure: every item carries evidence ids, and a validator checks them against the ledger.
+- **Thin and unstable results.** Some briefs came back nearly empty, and repeat runs shared only about 17% of their picks. We fixed the root cause (one malformed seed rejected a whole plan), added minimum content per section with automatic widening, and made the pipeline deterministic. Repeat runs now share about 80% of their picks (3 prompts, 2 runs each; indicative).
+- **Speed.** Briefs once took over a minute. Parallel queries, backup requests for slow calls, caching, and a deadline that writes an honest partial brief instead of failing brought the median time to a brief down to about 16 seconds.
+- **The map.** Qloo returns hotspots as unnamed grid cells. Naming them reliably, from Qloo place addresses first and map data second, without ever hiding valid hotspots, took several passes.
+
+## Accomplishments that we're proud of
+
+- A recommendation can't reach the screen without a citation to a real Qloo result, and anyone can open that result.
+- Taste Proof turns "trust me" into a check that Qloo referees.
+- The design comes from real rooms: the palette and materials trace back to tags on places this audience loves.
+- The Monday list turns cultural data into something a founder can act on the same week.
+
+## What we learned
+
+Grounding belongs in the data structure, not the prompt. Letting code run the predictable steps made the agent faster, cheaper and testable, and kept the model for the parts that need judgement. Qloo adds the most where a language model has nothing reliable to say: which local rooms a crowd loves, what those rooms look like, and where that crowd gathers. Coverage still varies by city: Indore is thinner than Chicago or London, so thin sections are labelled low-confidence rather than padded.
+
+## What's next for TasteForge
+
+- **Taste Proof as a verification layer for AI assistants:** an API that checks any assistant's local recommendations against Qloo before someone acts on them.
+- **The designer channel:** interior and hospitality designers already run a precedent study for each client, and a TasteForge brief is a ready-made one they can turn into renders.
+- **A 30-day pilot with 10 cafés:** each café makes one ambience or menu change from its brief, and we measure dwell time and repeat visits against its own baseline, publishing every result.
+
+## Walkthrough: a record-store bar in Chicago
 
 The screenshots come from the live site, using one of the six finished briefs on the home page.
 
@@ -100,43 +140,3 @@ Qloo chooses every artist, place, brand, hotspot and style tag. The language mod
 - `/v2/trending` shows whether the top artists are rising.
 - `filter.results.entities` lets Qloo score a shortlist we supply, so Qloo, not us, referees Taste Proof.
 - `filter.exclude.entities` and `filter.exclude.tags` make refining real: a disliked item is excluded in Qloo, not just hidden on screen.
-
-## How we built it
-
-TasteForge is a Next.js and TypeScript app. The agent's work streams to the browser over Server-Sent Events. The pipeline is a hybrid: code runs the predictable steps, and the model is used only where judgement is needed.
-
-1. **Seeds:** a fast LLM call pulls out the names, phrases and city from your description.
-2. **Resolve:** Qloo search and tag lookups run in parallel, and the agent asks when a name is ambiguous.
-3. **Graph walk:** parallel Qloo queries for each section of the brief, all recorded in an **evidence ledger**.
-4. **Critic:** checks coverage per section and may request follow-up queries from a fixed menu, such as widening the search or switching to tag signals.
-5. **Synthesis:** writes the brief in JSON mode, from ledger evidence only.
-6. **Validator:** plain code that removes any item without a valid citation and computes citation coverage.
-7. **Taste Proof:** scores the plain AI's answer and TasteForge's with Qloo.
-
-That's 3 to 5 LLM calls per brief, down from 10 to 15 when the model chose every step. The palette is computed in code from the brief's own tags, so different audiences get visibly different looks. Model calls go through a cascade of fast models with automatic fallback. Shared links are signed with HMAC. The test suite (over 700 unit tests plus browser end-to-end tests) asserts the exact Qloo parameter strings, because Qloo silently ignores parameters it doesn't recognise.
-
-## Challenges we ran into
-
-- **Being fair to the chatbot.** Our first matcher marked real venues like The Green Mill and Café de Flore as "not found". It now searches every entity type, tolerates accents, articles and suffixes, checks the city, and labels results as "couldn't verify" rather than "invented".
-- **Local taste.** An indie café crowd in Indore first got American rock radio. Adding Qloo's location signal to audience queries brought in local acts.
-- **Keeping the model honest.** Telling a model not to make things up isn't enough. Grounding works as a data structure: every item carries evidence ids, and a validator checks them against the ledger.
-- **Thin and unstable results.** Some briefs came back nearly empty, and repeat runs shared only about 17% of their picks. We fixed the root cause (one malformed seed rejected a whole plan), added minimum content per section with automatic widening, and made the pipeline deterministic. Repeat runs now share about 80% of their picks (3 prompts, 2 runs each; indicative).
-- **Speed.** Briefs once took over a minute. Parallel queries, backup requests for slow calls, caching, and a deadline that writes an honest partial brief instead of failing brought the median time to a brief down to about 16 seconds.
-- **The map.** Qloo returns hotspots as unnamed grid cells. Naming them reliably, from Qloo place addresses first and map data second, without ever hiding valid hotspots, took several passes.
-
-## Accomplishments that we're proud of
-
-- A recommendation can't reach the screen without a citation to a real Qloo result, and anyone can open that result.
-- Taste Proof turns "trust me" into a check that Qloo referees.
-- The design comes from real rooms: the palette and materials trace back to tags on places this audience loves.
-- The Monday list turns cultural data into something a founder can act on the same week.
-
-## What we learned
-
-Grounding belongs in the data structure, not the prompt. Letting code run the predictable steps made the agent faster, cheaper and testable, and kept the model for the parts that need judgement. Qloo adds the most where a language model has nothing reliable to say: which local rooms a crowd loves, what those rooms look like, and where that crowd gathers. Coverage still varies by city: Indore is thinner than Chicago or London, so thin sections are labelled low-confidence rather than padded.
-
-## What's next
-
-- **Taste Proof as a verification layer for AI assistants:** an API that checks any assistant's local recommendations against Qloo before someone acts on them.
-- **The designer channel:** interior and hospitality designers already run a precedent study for each client, and a TasteForge brief is a ready-made one they can turn into renders.
-- **A 30-day pilot with 10 cafés:** each café makes one ambience or menu change from its brief, and we measure dwell time and repeat visits against its own baseline, publishing every result.
