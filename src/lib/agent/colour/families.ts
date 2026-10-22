@@ -1,5 +1,5 @@
 /**
- * Curated mapping from tag vocabulary to colour families (documented in docs/ARCHITECTURE.md, "Palette derivation").
+ * Curated mapping from tag vocabulary to colour families (documented in CLAUDE.md, "Palette derivation").
  *
  * A family lists keywords (matched at word starts in a tag's name) and, per role, one or more HSL ranges:
  *   light  - a pale ground colour        mid  - a mid-tone support colour

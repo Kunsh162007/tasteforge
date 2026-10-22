@@ -11,7 +11,6 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "qloo:check": "tsx scripts/qloo-check.mts",
-    "benchmark": "tsx scripts/benchmark.mts",
     "warm": "tsx scripts/warm.mts"
   },
   "dependencies": {

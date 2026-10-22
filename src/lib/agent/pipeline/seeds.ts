@@ -153,7 +153,7 @@ const SEED_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 /**
  * Process-wide cache of seed plans. A repeated request gets the very same seeds, so repeat runs differ only where Qloo or
- * the writer do. `SEED_CACHE=0` turns it off (benchmarks that measure the model's own variance, unit tests).
+ * the writer do. `SEED_CACHE=0` turns it off (tests).
  */
 export const defaultSeedCache = (): Cache<SeedPlan> | undefined =>
   process.env.SEED_CACHE === "0" ? undefined : singleton("seed-plan-cache", () => createCache<SeedPlan>({ maxEntries: SEED_CACHE_ENTRIES, ttlMs: SEED_CACHE_TTL_MS }));

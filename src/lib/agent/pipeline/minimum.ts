@@ -3,7 +3,7 @@ import type { Evidence, Ledger } from "../ledger";
 import { isUsable } from "./context";
 
 /**
- * Minimum content per brief section. Repeat runs of one benchmark prompt produced briefs with 0 or 1 picks in a section
+ * Minimum content per brief section. Repeat runs of one prompt produced briefs with 0 or 1 picks in a section
  * (London ceramics: 0, then 10) because one narrow Qloo query came back thin and nothing widened it. The pipeline checks
  * these floors after the walk (and widens), and again after synthesis (and repairs).
  */

@@ -14,11 +14,9 @@ Made for independent café, bar and restaurant founders before opening, and the 
 
 ## Why not just ask ChatGPT?
 
-In our 20-prompt, 5-city benchmark, **Qloo couldn't verify 30% of a plain LLM's 276 picks** in the requested city (26% of its places). We sorted the 84 misses with AI assistance (judgement from general knowledge, not a per-name check): **10 likely invented, 54 real but not in Qloo or listed under another type** (authors named as artists, for example), **15 only in another city**, 5 unclassified. So the problem isn't that the chatbot invents most things. The problem is that you can't tell which picks are real, local and checkable. TasteForge's rate is 0% of 312 picks. That's by construction: it can only return what Qloo returned. On audience fit, the two roughly agree, and we don't claim a fit advantage. Details: [docs/BENCHMARK.md](docs/BENCHMARK.md).
+In our 20-prompt, 5-city benchmark, **Qloo couldn't verify 30% of a plain LLM's 276 picks** in the requested city (26% of its places). We sorted the 84 misses with AI assistance (judgement from general knowledge, not a per-name check): **10 likely invented, 54 real but not in Qloo or listed under another type** (authors named as artists, for example), **15 only in another city**, 5 unclassified. So the problem isn't that the chatbot invents most things. The problem is that you can't tell which picks are real, local and checkable. TasteForge's rate is 0% of 312 picks. That's by construction: it can only return what Qloo returned. On audience fit, the two roughly agree, and we don't claim a fit advantage. (Method: 20 prompts across Indore, London, Brooklyn, Chicago and Paris, each checked against live Qloo on 2026-10-21; one day and one model, so indicative.)
 
 Every brief runs the same check live: **Taste Proof** asks a plain LLM the same question and shows which of its picks Qloo could verify.
-
-More: [Devpost text](docs/DEVPOST.md) | [3-minute judge walkthrough](docs/DEMO_SCRIPT.md) | [screenshots](docs/GALLERY.md) | [architecture](docs/ARCHITECTURE.md)
 
 ## What's in a brief
 
@@ -86,7 +84,7 @@ Answers "is a TasteForge brief safer to use than a plain LLM answer?" with Qloo'
 
 Proof failure never fails the brief. Honest framing: the score measures fit with the audience's Qloo taste signals, not quality in general.
 
-Benchmark numbers, the classification of the misses and the caveats are in [docs/BENCHMARK.md](docs/BENCHMARK.md) (reproduce with `npm run benchmark`). Repeat runs of the same prompt share about 80% of their picks (3 prompts, 2 runs each, indicative).
+Benchmark numbers are in the section above. Repeat runs of the same prompt share about 80% of their picks (3 prompts, 2 runs each, indicative).
 
 What it claims, and what it does not: every TasteForge pick is a Qloo result and traceable to its record, and picks a plain answer names that Qloo cannot verify in the city are shown as such. It does not claim a fit advantage, and it does not claim that unverified picks are fake.
 
@@ -109,7 +107,7 @@ seeds (LLM) -> resolve (Qloo) -> parallel graph walk (Qloo, 28 s soft deadline)
   -> critic (LLM, one round, ~10 s) -> synthesis (LLM) -> validator -> Taste Proof
 ```
 
-Streaming over Server-Sent Events, so the UI shows the graph walk as it happens. Full diagram, event contract, module map and design decisions: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Streaming over Server-Sent Events, so the UI shows the graph walk as it happens. Developers: the full architecture, event contract, module map, design decisions and Qloo API notes are in [CLAUDE.md](CLAUDE.md).
 
 ## Quick start
 
@@ -142,7 +140,7 @@ Run with a real LLM and mock Qloo: set `QLOO_MODE=mock`, `LLM_PROVIDER=gemini` a
 | `GET /api/showcase` | Pre-generated example briefs; `?retry=1` retries failed ones (rate limited) | none |
 | `GET /api/health` | Liveness and configuration summary (200 ok, 503 misconfigured) | none |
 
-Details, the event contract and the module map are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The event contract is in [CLAUDE.md](CLAUDE.md).
 
 ## Environment variables
 
@@ -174,7 +172,6 @@ Keys are read from the environment only. `.env*` is git-ignored except `.env.exa
 | `npm run test:coverage` | Same, with V8 coverage |
 | `npm run lint` | ESLint |
 | `npm run test:e2e` | Playwright end-to-end flow (submit, brief, evidence drawer, Taste Proof, map, refine) |
-| `npm run benchmark` | Verification benchmark: 20 prompts across 5 cities, plain LLM against TasteForge, checked against live Qloo; writes `docs/BENCHMARK.md`. Needs `QLOO_MODE=live` and an LLM key. |
 | `npm run warm` | Waits until the deployed showcase (default https://tasteforge-fa98.onrender.com, or `-- --url=...`) has all six briefs ready; also wakes a sleeping Render instance. See the judging-day checklist. |
 | `npm run qloo:check -- --live` | Probes each Qloo endpoint and parameter and prints PASS/WARN/FAIL plus the remaining Qloo quota. Needs `-- --live` and `QLOO_API_KEY` to test real data (about 21 live Qloo calls, which count against the monthly quota); without `--live` it runs against the mock fixtures and proves nothing about the live API. |
 

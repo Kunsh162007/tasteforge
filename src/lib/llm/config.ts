@@ -26,7 +26,7 @@ export const DEFAULT_GEMINI_MODEL = "gemini-2.5-flash";
 export const DEFAULT_GEMINI_LIGHT_MODEL = "gemini-3.5-flash-lite";
 export const DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b";
 /**
- * Measured live on 2026-10-20 (docs/ARCHITECTURE.md): Groq answers the short JSON calls in 0.4 to 1 s and the synthesis in
+ * Measured live on 2026-10-20 (CLAUDE.md): Groq answers the short JSON calls in 0.4 to 1 s and the synthesis in
  * 5 s, Gemini free tier in 9 to 21 s and 13 to 16 s (3.5 Flash-Lite often answers 503). Each Groq model has its own
  * 8000 tokens a minute, so a synthesis that does not fit falls through to Gemini 2.5 Flash, then to the next model.
  */

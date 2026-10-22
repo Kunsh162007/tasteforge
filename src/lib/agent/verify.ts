@@ -150,7 +150,7 @@ export async function verifyPick(qloo: QlooClient, kind: VerifyKind, name: strin
   return verdict;
 }
 
-/** The plain-words reason a pick is not verified, for the UI and the benchmark. */
+/** The plain-words reason a pick is not verified, for the UI. */
 export function statusLabel(status: VerifyStatus, v?: Pick<Verdict, "matchedKind">, city?: string): string {
   switch (status) {
     case "verified":
